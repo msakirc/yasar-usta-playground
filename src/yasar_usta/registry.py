@@ -4,16 +4,26 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import re
 from pathlib import Path
 
 import yaml
 
 from .config import GuardConfig, HubConfig, ProjectConfig, SidecarConfig
 
+_ENV_RE = re.compile(r"\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}")
+
 
 def _resolve(value, tokens: dict):
-    """Substitute ${token} placeholders in strings (recursively in lists/dicts)."""
+    """Substitute ${token} and ${env:VAR} placeholders in strings (recursively in lists/dicts)."""
     if isinstance(value, str):
+        def _env(m):
+            name = m.group(1)
+            val = os.environ.get(name)
+            if val is None:
+                raise ValueError(f"registry references unset env var: {name}")
+            return val
+        value = _ENV_RE.sub(_env, value)
         for k, v in tokens.items():
             value = value.replace("${" + k + "}", v)
         return value
@@ -94,9 +104,11 @@ def load_registry(path, project_root: str) -> tuple[HubConfig, list[ProjectConfi
 
     projects: list[ProjectConfig] = []
     for pid, raw_proj in data["projects"].items():
+        proj_root = raw_proj.get("root", project_root)
+        proj_tokens = {"project_root": proj_root}
         if "targets" not in raw_proj or not raw_proj["targets"]:
             raise ValueError(f"project {pid!r} has no targets")
-        targets = [_build_target(t, tokens) for t in raw_proj["targets"]]
+        targets = [_build_target(t, proj_tokens) for t in raw_proj["targets"]]
         projects.append(ProjectConfig(
             id=pid,
             name=raw_proj.get("name", pid),
