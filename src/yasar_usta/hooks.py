@@ -64,16 +64,3 @@ def run_hook_subprocess(project, phase: str, extra: dict) -> int | None:
 def run_pre_boot(project) -> None:
     """Back-compat name used by hub.run(). Subprocess dispatch."""
     run_hook_subprocess(project, "pre_boot", extra={})
-
-
-# ---------------------------------------------------------------------------
-# Deprecated shim — kept only so hub.py (Task 1.8) can still import this name
-# without crashing.  hub.py will be rewritten in Task 1.8 to stop calling this.
-# ---------------------------------------------------------------------------
-def load_hook(module_path: str | None):  # noqa: ARG001
-    """DEPRECATED — always returns None.  hub.py Task 1.8 will remove this call."""
-    logger.warning(
-        "load_hook() is deprecated and does nothing; update hub.py to use "
-        "run_hook_subprocess() directly (Task 1.8)."
-    )
-    return None

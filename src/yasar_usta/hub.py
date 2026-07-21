@@ -14,7 +14,7 @@ from .commands import (build_dashboard_keyboard, build_hub_reply_keyboard,
                        format_log_entries)
 from .config import HubConfig, ProjectConfig
 from .heartbeat import HeartbeatWriter
-from .hooks import load_hook, run_pre_boot
+from .hooks import run_pre_boot, run_hook_subprocess
 from .lock import acquire_lock, release_lock
 from .singleton import (_win32_create_mutex, enforce_singleton,
                         release_singleton)
@@ -45,19 +45,27 @@ class Hub:
         # One supervisor per target, keyed by a unique routing id. Single-target
         # project → routing id is the project id; multi-target → `${pid}:${tgt}`.
         self.supervisors: dict[str, TargetSupervisor] = {}
-        self._hooks: dict[str, object] = {}  # loaded once, reused in run()
         for proj in projects:
-            hook = load_hook(proj.hook_module)
-            self._hooks[proj.id] = hook
             for tgt in proj.targets:
-                if hook is not None and hasattr(hook, "on_exit"):
-                    tgt.on_exit = hook.on_exit
+                # on_exit fires KutAI's llama-server/Ollama orphan-kill on a
+                # non-clean exit — dispatched as a subprocess in the project's
+                # own venv so the hub never imports project packages (§4).
+                tgt.on_exit = self._make_on_exit(proj)
                 single = len(proj.targets) == 1
                 rid = proj.id if single else f"{proj.id}:{tgt.name}"
                 display = proj.name if single else f"{proj.name} · {tgt.app_name}"
                 self.supervisors[rid] = TargetSupervisor(
                     rid, tgt, notify=self._notify, reply_keyboard=self._reply_kb,
                     display_name=display)
+
+    @staticmethod
+    def _make_on_exit(proj):
+        """Build a per-project on_exit that dispatches the on_exit hook as a
+        subprocess. `_proj` default-binds so the closure is not late-bound to
+        the last project in the loop."""
+        def _on_exit(exit_code, _proj=proj):
+            run_hook_subprocess(_proj, "on_exit", {"exit_code": exit_code})
+        return _on_exit
 
     async def _notify(self, text: str, reply_markup: dict | None = None) -> None:
         result = await self.telegram.send(text, reply_markup=reply_markup)
@@ -385,7 +393,7 @@ class Hub:
 
         # pre_boot hooks (per project, once, after lock — spec finding #4).
         for proj in self.projects:
-            run_pre_boot(self._hooks.get(proj.id), proj)
+            run_pre_boot(proj)
 
         offset = await self.telegram.flush_updates()
         try:
