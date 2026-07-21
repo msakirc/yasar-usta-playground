@@ -27,6 +27,15 @@ logger = logging.getLogger("yasar_usta.hub")
 import subprocess as _subprocess
 
 
+def build_restart_command(registry_args: list) -> list:
+    """Return the argv list for a hub self-restart via ``python -m yasar_usta``.
+
+    Using ``-m yasar_usta`` (rather than the bare ``__main__.py`` path) keeps
+    package-relative imports working in the spawned process.
+    """
+    return [sys.executable, "-m", "yasar_usta"] + list(registry_args)
+
+
 def assert_consumer_imports(projects) -> None:
     """Each project's venv must resolve the heartbeat client symbols before we
     manage its child. Fail loud (SystemExit) rather than a late ImportError."""
@@ -281,7 +290,6 @@ class Hub:
         await self._stop_poller()
         await self.telegram.flush_updates()
         import subprocess as _sp
-        script = str(Path(sys.argv[0]).resolve())
         kwargs = {}
         if sys.platform == "win32":
             kwargs["creationflags"] = (
@@ -292,8 +300,12 @@ class Hub:
         # quiesced (supervisors + poller stopped) so there is no double-work.
         release_singleton()
         release_lock()
-        _sp.Popen([sys.executable, script] + sys.argv[1:], close_fds=True,
-                  cwd=str(Path(script).parent), **kwargs)
+        # Restart via `-m yasar_usta` (package imports resolve); pin CWD to the
+        # hub repo root so __main__.load_dotenv() finds the hub .env on restart.
+        # hub.py is at src/yasar_usta/hub.py → parents[2] is the repo root.
+        _hub_root = str(Path(__file__).resolve().parents[2])
+        _sp.Popen(build_restart_command(sys.argv[1:]), close_fds=True,
+                  cwd=_hub_root, **kwargs)
         os._exit(0)
 
     async def _stop_poller(self) -> None:
