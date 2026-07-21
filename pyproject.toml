@@ -4,10 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yasar-usta"
-version = "0.1.0"
-description = "Telegram-controlled process manager with heartbeat watchdog and auto-restart"
+version = "0.2.0"
+description = "Multi-project Telegram-controlled process hub with singleton mutex, heartbeat watchdog, and auto-restart"
 requires-python = ">=3.10"
-dependencies = ["aiohttp>=3.9.0", "pyyaml>=6.0"]
+dependencies = ["aiohttp>=3.9.0", "pyyaml>=6.0", "python-dotenv>=1.0.0", "psutil>=5.9"]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0", "pytest-timeout>=2.1"]
+
+[project.scripts]
+yasar-usta = "yasar_usta.__main__:main_cli"
 
 [tool.setuptools.packages.find]
 where = ["src"]
