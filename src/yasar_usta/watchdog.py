@@ -43,15 +43,24 @@ def decide_kill(ts, now: float, hub_pids, threshold: float = DEFAULT_STALE_SECON
     return list(hub_pids)
 
 
+def cmdline_is_hub(argv: list) -> bool:
+    """True iff argv is a `-m yasar_usta` hub launch (adjacent tokens), NOT the
+    watchdog submodule and NOT a loose substring."""
+    for i in range(len(argv) - 1):
+        if argv[i] == "-m" and argv[i + 1] == "yasar_usta":
+            return True
+    return False
+
+
 def find_hub_pids() -> list:
-    """Live hub processes (kutai_wrapper.py). psutil; skips inaccessible procs."""
+    """Live hub processes (python -m yasar_usta). psutil; skips inaccessible."""
     import psutil
     out = []
     for p in psutil.process_iter(["pid", "name", "cmdline"]):
         try:
             if "python" not in (p.info.get("name") or "").lower():
                 continue
-            if "kutai_wrapper.py" in " ".join(p.info.get("cmdline") or []):
+            if cmdline_is_hub(p.info.get("cmdline") or []):
                 out.append(p.info["pid"])
         except Exception:
             continue
