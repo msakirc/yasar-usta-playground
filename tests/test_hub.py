@@ -116,9 +116,15 @@ def test_hub_alive_path_under_log_dir(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_run_writes_hub_alive(tmp_path):
+async def test_run_writes_hub_alive(tmp_path, monkeypatch):
     """run() must write hub.alive (the watchdog's liveness signal) from a task
     decoupled from the crash/backoff loop."""
+    # This test exercises heartbeat/supervisor behavior, not the boot gates:
+    # the fixture hub has an empty telegram_token, so neutralize the (strict)
+    # boot asserts here. The asserts themselves are covered by
+    # tests/test_entry_and_bootasserts.py.
+    monkeypatch.setattr("yasar_usta.hub.assert_hub_credentials", lambda cfg: None)
+    monkeypatch.setattr("yasar_usta.hub.assert_consumer_imports", lambda projects: None)
     hub = _hub(tmp_path, ["kutai"])
     hub._acquire_singleton = lambda: None
 
@@ -218,9 +224,13 @@ async def test_kutai_aliases_route(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_supervisor_crash_does_not_kill_hub(tmp_path):
+async def test_supervisor_crash_does_not_kill_hub(tmp_path, monkeypatch):
     """A supervisor run() raising must NOT propagate out of Hub.run(); the hub
     must still clean up the poller."""
+    # Not a credentials test — the fixture hub has an empty token, so bypass the
+    # strict boot gates (covered by tests/test_entry_and_bootasserts.py).
+    monkeypatch.setattr("yasar_usta.hub.assert_hub_credentials", lambda cfg: None)
+    monkeypatch.setattr("yasar_usta.hub.assert_consumer_imports", lambda projects: None)
     hub = _hub(tmp_path, ["kutai", "foo"])
     hub._acquire_singleton = lambda: None  # don't touch the real Win32 mutex
     monkey_stopped = {"n": 0}

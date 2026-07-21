@@ -24,6 +24,34 @@ from .telegram import TelegramAPI
 
 logger = logging.getLogger("yasar_usta.hub")
 
+import subprocess as _subprocess
+
+
+def assert_consumer_imports(projects) -> None:
+    """Each project's venv must resolve the heartbeat client symbols before we
+    manage its child. Fail loud (SystemExit) rather than a late ImportError."""
+    for p in projects:
+        vp = getattr(p, "venv_python", None)
+        if not vp:
+            continue
+        try:
+            r = _subprocess.run(
+                [vp, "-c", "from yasar_usta import HeartbeatWriter, write_heartbeat"],
+                capture_output=True, text=True, timeout=30)
+        except Exception as e:
+            raise SystemExit(f"[Yasar Usta] cannot probe {p.id} venv {vp}: {e}")
+        if r.returncode != 0:
+            raise SystemExit(
+                f"[Yasar Usta] project {p.id}: 'yasar_usta' not importable in {vp}. "
+                f"Run: pip install -e ../yasar_usta in that venv. ({(r.stderr or '').strip()})")
+
+
+def assert_hub_credentials(cfg) -> None:
+    if not getattr(cfg, "telegram_token", ""):
+        raise SystemExit(
+            "[Yasar Usta] YASAR_USTA_BOT_TOKEN is empty — refusing to boot a "
+            "credential-less hub (alerts would be silently dark). Check the hub .env.")
+
 
 class Hub:
     def __init__(self, hub_cfg: HubConfig, projects: list[ProjectConfig]):
@@ -388,6 +416,12 @@ class Hub:
         # Mutex is the singleton authority — gate BEFORE the file lock and any
         # pre_boot cleanup, so a second hub exits before killing anything (§4.1).
         self._acquire_singleton()
+        # Fail-loud boot gates: a credential-less hub runs with alerts silently
+        # dark, and a consumer venv that can't import yasar_usta would fail
+        # late in a managed child. Refuse to boot in either case — but only
+        # after the mutex, so a mutex-loser exits without paying the cost.
+        assert_hub_credentials(self.cfg)
+        assert_consumer_imports(self.projects)
         acquire_lock(self.cfg.log_dir, name="hub")
         logger.info("Hub started with %d supervisors", len(self.supervisors))
 

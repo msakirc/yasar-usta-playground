@@ -26,7 +26,13 @@ def _proj(pid, tmp_path, code):
 
 
 @pytest.mark.asyncio
-async def test_two_targets_run_independently(tmp_path):
+async def test_two_targets_run_independently(tmp_path, monkeypatch):
+    # This exercises supervisor isolation, not the boot gates: the hub cfg has
+    # an empty token and the projects have no venv_python, so neutralize the
+    # (strict) boot asserts here. They are covered by
+    # tests/test_entry_and_bootasserts.py.
+    monkeypatch.setattr("yasar_usta.hub.assert_hub_credentials", lambda cfg: None)
+    monkeypatch.setattr("yasar_usta.hub.assert_consumer_imports", lambda projects: None)
     hub_cfg = HubConfig(telegram_token="", telegram_chat_id="",
                         log_dir=str(tmp_path / "hub"))
     projects = [
