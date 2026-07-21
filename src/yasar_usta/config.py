@@ -165,3 +165,4 @@ class ProjectConfig:
     venv_python: str | None = None
     hook_path: str | None = None
     state_dir: str | None = None   # Phase 2; harmless now
+    messages: Messages | None = None

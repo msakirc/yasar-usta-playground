@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from .config import GuardConfig, HubConfig, ProjectConfig, SidecarConfig
+from .config import GuardConfig, HubConfig, Messages, ProjectConfig, SidecarConfig
 
 _ENV_RE = re.compile(r"\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}")
 
@@ -109,6 +109,11 @@ def load_registry(path, project_root: str) -> tuple[HubConfig, list[ProjectConfi
         if "targets" not in raw_proj or not raw_proj["targets"]:
             raise ValueError(f"project {pid!r} has no targets")
         targets = [_build_target(t, proj_tokens) for t in raw_proj["targets"]]
+        raw_msgs = raw_proj.get("messages")
+        msgs = None
+        if raw_msgs:
+            valid = {f.name for f in dataclasses.fields(Messages)}
+            msgs = Messages(**{k: v for k, v in raw_msgs.items() if k in valid})
         projects.append(ProjectConfig(
             id=pid,
             name=raw_proj.get("name", pid),
@@ -116,5 +121,6 @@ def load_registry(path, project_root: str) -> tuple[HubConfig, list[ProjectConfi
             hook_module=raw_proj.get("hook_module"),
             venv_python=_norm(_resolve(raw_proj.get("venv_python"), proj_tokens)),
             hook_path=_norm(_resolve(raw_proj.get("hook"), proj_tokens)),
+            messages=msgs,
         ))
     return hub, projects
