@@ -1,32 +1,79 @@
-"""Optional per-project lifecycle hooks. A hook module may define:
-  pre_boot(project)   -> runs once, after the hub lock, before supervisors start
-  on_exit(exit_code)  -> passed to each target's GuardConfig.on_exit
-"""
+"""Per-project lifecycle hooks, dispatched as a SUBPROCESS in the project's own
+venv so the hub never imports project packages.
 
+Contract: the project ships a ``yasar_hooks.py`` runnable by its venv python:
+    <project_venv_python> yasar_hooks.py <phase> --context <json>
+where <phase> is 'pre_boot' or 'on_exit'. The JSON context carries what the
+old in-process hook read from the project object.
+"""
 from __future__ import annotations
 
-import importlib
+import json
 import logging
+import subprocess
 
 logger = logging.getLogger("yasar_usta.hooks")
 
 
-def load_hook(module_path: str | None):
-    if not module_path:
-        return None
-    try:
-        return importlib.import_module(module_path)
-    except Exception as e:
-        logger.error("Hook module %s failed to import: %s", module_path, e)
-        return None
+def _script_paths(project) -> list:
+    paths = []
+    for tgt in getattr(project, "targets", []) or []:
+        for arg in getattr(tgt, "command", []) or []:
+            if isinstance(arg, str) and arg.lower().endswith(".py"):
+                paths.append(arg)
+    return paths
 
 
-def run_pre_boot(hook, project) -> None:
-    if hook is None or not hasattr(hook, "pre_boot"):
-        return
+def build_hook_command(project, phase: str, extra: dict) -> list | None:
+    """Argv list (never a shell string — Windows backslash JSON) or None if the
+    project declares no hook."""
+    venv_python = getattr(project, "venv_python", None)
+    hook_path = getattr(project, "hook_path", None)
+    if not (venv_python and hook_path):
+        return None
+    context = {"project_id": project.id, "script_paths": _script_paths(project)}
+    context.update(extra or {})
+    return [venv_python, hook_path, phase, "--context", json.dumps(context)]
+
+
+def run_hook_subprocess(project, phase: str, extra: dict) -> int | None:
+    """Spawn the project's hook. Returns rc, or None if no hook declared.
+    pre_boot surfaces failure (raises); on_exit is fail-soft."""
+    cmd = build_hook_command(project, phase, extra)
+    if cmd is None:
+        return None
     try:
-        hook.pre_boot(project)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     except Exception as e:
-        # Surfaced, not swallowed (spec: KutAI pre_boot failure must be visible)
-        logger.error("pre_boot for %s failed: %s", project.id, e)
-        raise
+        logger.error("hook %s for %s failed to spawn: %s", phase, project.id, e)
+        if phase == "pre_boot":
+            raise
+        return None
+    stdout = getattr(result, "stdout", None) or ""
+    stderr = getattr(result, "stderr", None) or ""
+    if stdout:
+        logger.info("[hook %s/%s] %s", project.id, phase, stdout.strip())
+    if result.returncode != 0:
+        logger.error("[hook %s/%s] rc=%s stderr=%s", project.id, phase,
+                     result.returncode, stderr.strip())
+        if phase == "pre_boot":
+            raise RuntimeError(f"pre_boot hook for {project.id} failed rc={result.returncode}")
+    return result.returncode
+
+
+def run_pre_boot(project) -> None:
+    """Back-compat name used by hub.run(). Subprocess dispatch."""
+    run_hook_subprocess(project, "pre_boot", extra={})
+
+
+# ---------------------------------------------------------------------------
+# Deprecated shim — kept only so hub.py (Task 1.8) can still import this name
+# without crashing.  hub.py will be rewritten in Task 1.8 to stop calling this.
+# ---------------------------------------------------------------------------
+def load_hook(module_path: str | None):  # noqa: ARG001
+    """DEPRECATED — always returns None.  hub.py Task 1.8 will remove this call."""
+    logger.warning(
+        "load_hook() is deprecated and does nothing; update hub.py to use "
+        "run_hook_subprocess() directly (Task 1.8)."
+    )
+    return None
