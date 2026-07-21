@@ -114,5 +114,7 @@ def load_registry(path, project_root: str) -> tuple[HubConfig, list[ProjectConfi
             name=raw_proj.get("name", pid),
             targets=targets,
             hook_module=raw_proj.get("hook_module"),
+            venv_python=_norm(_resolve(raw_proj.get("venv_python"), proj_tokens)),
+            hook_path=_norm(_resolve(raw_proj.get("hook"), proj_tokens)),
         ))
     return hub, projects

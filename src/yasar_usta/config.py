@@ -162,3 +162,6 @@ class ProjectConfig:
     name: str
     targets: list[GuardConfig] = field(default_factory=list)
     hook_module: str | None = None
+    venv_python: str | None = None
+    hook_path: str | None = None
+    state_dir: str | None = None   # Phase 2; harmless now
