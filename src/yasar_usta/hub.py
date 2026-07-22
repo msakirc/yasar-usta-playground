@@ -215,6 +215,12 @@ class Hub:
             await self._notify(f"🔁 *{self.cfg.name} yeniden başlatılıyor...*")
             await self._do_restart_hub()
             return
+        if cb_data == "confirm_shutdown_hub":
+            if cb_msg_id:
+                await self.telegram.delete(cb_msg_id)
+            await self._notify(f"🛑 *{self.cfg.name} durduruluyor...*")
+            await self._do_shutdown_hub()
+            return
         if cb_data == "confirm_cancel":
             if cb_msg_id:
                 await self.telegram.delete(cb_msg_id)
@@ -313,6 +319,44 @@ class Hub:
         _hub_root = str(Path(__file__).resolve().parents[2])
         _sp.Popen(build_restart_command(sys.argv[1:]), close_fds=True,
                   cwd=_hub_root, **kwargs)
+        # Exit NONZERO (42) so the Layer-0 Task Scheduler task
+        # (restart-on-failure, RestartCount 999) becomes a safety-net: if the
+        # detached Popen bridge above ever fails to bring a replacement up, the
+        # scheduler relaunches within its RestartInterval. The Popen remains the
+        # PRIMARY (instant) restarter; the singleton mutex + `IgnoreNew` make the
+        # scheduler's relaunch a no-op while the Popen'd hub holds the mutex, so
+        # there is never a double hub. Pre-Phase-4 (no task registered) the code
+        # is inert — nobody reads 42 — and the Popen bridge restarts as before.
+        os._exit(42)
+
+    # ── Hub deliberate shutdown (stopped-gate create-half, R1) ───────────
+    async def _do_shutdown_hub(self) -> None:
+        """Deliberate, staying-down stop (the `/shutdown_hub` command).
+
+        Unlike `_do_restart_hub`, this does NOT relaunch: it writes the
+        `hub.stopped` sentinel — the create-half the watchdog's deliberate-stop
+        gate was waiting on — then exits 0 so Task Scheduler's
+        restart-on-failure does NOT bring the hub back. The sentinel is written
+        BEFORE quiescing so the 3-min watchdog can never race a kill against a
+        hub that is going down on purpose. `Hub.run()` boot-unlinks the sentinel
+        on the next start, so this is a soft, session-scoped stop: the next
+        logon's at-logon trigger relaunches a clean hub. For a permanent stop,
+        disable the `YasarUsta` scheduled task.
+        """
+        self._shutdown = True
+        try:
+            d = Path(self.cfg.log_dir)
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "hub.stopped").write_text(str(time.time()))
+        except Exception as e:
+            logger.error("shutdown: could not write hub.stopped sentinel: %s", e)
+        for sup in self.supervisors.values():
+            sup.request_shutdown()
+            await sup.do_stop_now()
+        await self._stop_poller()
+        await self.telegram.flush_updates()
+        release_singleton()
+        release_lock()
         os._exit(0)
 
     async def _stop_poller(self) -> None:
@@ -389,6 +433,17 @@ class Hub:
                 or text.startswith("/restart_guard"):
             await self._notify("♻️ *Hub yeniden başlatılıyor...*")
             await self._do_restart_hub()
+            return
+        # Deliberate, staying-down stop (writes hub.stopped, no relaunch) —
+        # destructive (downs every project until next logon) → confirm first.
+        if text.startswith("/shutdown_hub") or text.startswith("/stop_hub"):
+            await self.telegram.send(
+                f"🛑 *{self.cfg.name} tamamen durdurulsun mu?*\n"
+                "Tüm projeler durur ve sonraki oturum açılışına kadar kapalı kalır.",
+                reply_markup={"inline_keyboard": [[
+                    {"text": "✅ Evet", "callback_data": "confirm_shutdown_hub"},
+                    {"text": "❌ Vazgeç", "callback_data": "confirm_cancel"},
+                ]]})
             return
         # Persistent reply-keyboard labels for Logs / Remote (review finding #1/#2)
         if text.startswith("/logs") or text == self.msgs.btn_logs:

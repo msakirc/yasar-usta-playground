@@ -89,6 +89,85 @@ async def test_confirm_restart_hub_executes(tmp_path):
     assert ran["n"] == 1
 
 
+def _quiesce(hub):
+    """Neutralize the destructive side effects of the restart/shutdown paths so
+    a test can drive them without spawning a process or stopping real work."""
+    for sup in hub.supervisors.values():
+        sup.request_shutdown = lambda: None
+        async def _s():
+            return None
+        sup.do_stop_now = _s
+    hub._stop_poller = lambda: asyncio.sleep(0)
+    hub.telegram.flush_updates = lambda: asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_restart_hub_exits_42_and_keeps_popen_bridge(tmp_path, monkeypatch):
+    """_do_restart_hub must exit NONZERO (42) so Task Scheduler's
+    restart-on-failure is a safety-net if the detached Popen self-restart
+    fails — while STILL spawning the Popen bridge (instant restart, no
+    1-min Scheduler gap). The mutex + IgnoreNew prevent a double hub."""
+    import yasar_usta.hub as hubmod
+    hub = _hub(tmp_path, ["kutai"])
+    _quiesce(hub)
+    popen = {"n": 0}
+    monkeypatch.setattr(hubmod._subprocess, "Popen",
+                        lambda *a, **k: popen.__setitem__("n", popen["n"] + 1))
+    exits = []
+    monkeypatch.setattr(hubmod.os, "_exit", lambda code: exits.append(code))
+    await hub._do_restart_hub()
+    assert popen["n"] == 1     # instant self-restart bridge preserved
+    assert exits == [42]       # nonzero → Scheduler relaunches if the Popen died
+
+
+@pytest.mark.asyncio
+async def test_shutdown_hub_writes_stopped_sentinel_and_exits_zero(tmp_path, monkeypatch):
+    """_do_shutdown_hub is a deliberate, staying-down stop: it writes the
+    hub.stopped sentinel (watchdog deliberate-stop gate) and exits 0 so
+    Task Scheduler restart-on-failure does NOT relaunch. It must NOT spawn
+    a Popen restart bridge."""
+    import yasar_usta.hub as hubmod
+    hub = _hub(tmp_path, ["kutai"])
+    _quiesce(hub)
+    popen = {"n": 0}
+    monkeypatch.setattr(hubmod._subprocess, "Popen",
+                        lambda *a, **k: popen.__setitem__("n", popen["n"] + 1))
+    exits = []
+    monkeypatch.setattr(hubmod.os, "_exit", lambda code: exits.append(code))
+    await hub._do_shutdown_hub()
+    assert (Path(hub.cfg.log_dir) / "hub.stopped").exists()
+    assert exits == [0]        # deliberate stop → no Scheduler relaunch
+    assert popen["n"] == 0     # deliberate stop must NOT self-restart
+
+
+@pytest.mark.asyncio
+async def test_shutdown_hub_command_asks_confirmation(tmp_path):
+    hub = _hub(tmp_path, ["kutai"])
+    sent = []
+    hub.telegram.send = lambda text, reply_markup=None: (
+        sent.append((text, reply_markup)) or asyncio.sleep(0))
+    ran = {"n": 0}
+    async def _do():
+        ran["n"] += 1
+    hub._do_shutdown_hub = _do
+    await hub._route_text("/shutdown_hub")
+    assert ran["n"] == 0  # a mis-typed command must NOT down the hub immediately
+    assert "confirm_shutdown_hub" in str(sent)
+
+
+@pytest.mark.asyncio
+async def test_confirm_shutdown_hub_executes(tmp_path):
+    hub = _hub(tmp_path, ["kutai"])
+    hub.telegram.delete = lambda *a, **k: asyncio.sleep(0)
+    hub._notify = lambda *a, **k: asyncio.sleep(0)
+    ran = {"n": 0}
+    async def _do():
+        ran["n"] += 1
+    hub._do_shutdown_hub = _do
+    await hub._route_callback("confirm_shutdown_hub", cb_msg_id=5)
+    assert ran["n"] == 1
+
+
 def test_singleton_gate_exits_zero_when_another_hub_owns_it(tmp_path):
     hub = _hub(tmp_path, ["kutai"])
     calls = []
