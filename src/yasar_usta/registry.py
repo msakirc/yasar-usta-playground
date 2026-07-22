@@ -105,7 +105,10 @@ def load_registry(path, project_root: str) -> tuple[HubConfig, list[ProjectConfi
     projects: list[ProjectConfig] = []
     for pid, raw_proj in data["projects"].items():
         proj_root = raw_proj.get("root", project_root)
-        proj_tokens = {"project_root": proj_root}
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+        default_state = f"{localappdata}/YasarUsta/{pid}" if localappdata else f"{proj_root}/logs"
+        state_dir = raw_proj.get("state_dir", default_state)
+        proj_tokens = {"project_root": proj_root, "state_dir": state_dir}
         if "targets" not in raw_proj or not raw_proj["targets"]:
             raise ValueError(f"project {pid!r} has no targets")
         targets = [_build_target(t, proj_tokens) for t in raw_proj["targets"]]
@@ -122,5 +125,6 @@ def load_registry(path, project_root: str) -> tuple[HubConfig, list[ProjectConfi
             venv_python=_norm(_resolve(raw_proj.get("venv_python"), proj_tokens)),
             hook_path=_norm(_resolve(raw_proj.get("hook"), proj_tokens)),
             messages=msgs,
+            state_dir=_norm(state_dir),
         ))
     return hub, projects
