@@ -29,16 +29,16 @@ def state_snapshot_candidates(heartbeat_file: str | None) -> list:
     return out
 
 
-def build_child_env(tgt, state_dir=None, base_env=None):
+def build_child_env(obj, state_dir=None, base_env=None):
     """Merge base env + target env + YASAR_USTA_STATE_DIR (only if state_dir set).
 
     Args:
-        tgt: An object with an optional ``env`` dict attribute (e.g. GuardConfig).
+        obj: any object with an optional ``.env`` dict attribute (GuardConfig or SubprocessManager).
         state_dir: If set, injected as ``YASAR_USTA_STATE_DIR`` in the result.
         base_env: Base environment mapping. Defaults to ``os.environ``.
     """
     env = {**(base_env if base_env is not None else os.environ),
-           **(getattr(tgt, "env", None) or {})}
+           **(getattr(obj, "env", None) or {})}
     if state_dir:
         env["YASAR_USTA_STATE_DIR"] = state_dir
     return env

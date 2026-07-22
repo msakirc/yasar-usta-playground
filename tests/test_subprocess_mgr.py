@@ -118,3 +118,25 @@ async def test_env_merged_onto_os_environ(tmp_path):
     assert marker.read_text() == "hello"
     # os.environ was NOT mutated
     assert "MYVAR" not in os.environ
+
+
+@pytest.mark.asyncio
+async def test_state_dir_injected_into_child(tmp_path):
+    """start() must inject YASAR_USTA_STATE_DIR into the child environment when
+    state_dir is set.  Exercises the production path:
+    build_child_env(self, self.state_dir) inside SubprocessManager.start()."""
+    marker = tmp_path / "state_out.txt"
+    code = (
+        "import os, pathlib; "
+        "pathlib.Path(os.environ['OUT']).write_text("
+        "os.environ.get('YASAR_USTA_STATE_DIR', 'MISSING'))"
+    )
+    mgr = SubprocessManager(
+        command=[sys.executable, "-c", code],
+        log_dir=str(tmp_path / "logs"),
+        state_dir="C:/some/state/kutai",
+        env={"OUT": str(marker)},
+    )
+    await mgr.start()
+    await mgr.wait_for_exit()
+    assert marker.read_text() == "C:/some/state/kutai"

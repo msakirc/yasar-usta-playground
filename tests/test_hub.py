@@ -337,3 +337,30 @@ async def test_sidecar_health_concurrent_and_no_double_http(tmp_path):
     hub.telegram.send = lambda *a, **k: asyncio.sleep(0)
     await hub._send_dashboard()
     assert sc.http == 1  # exactly one http check, no redundant is_alive() call
+
+
+@pytest.mark.asyncio
+async def test_run_rejects_relative_log_dir(tmp_path, monkeypatch):
+    """Hub.run() must raise SystemExit before touching the filesystem or
+    acquiring the singleton mutex when log_dir is relative. This pins the
+    wiring: assert_hub_log_dir_absolute is the very first statement in run()."""
+    import yasar_usta.hub as hubmod
+    # Build a Hub with a RELATIVE log_dir — the rest of the config is inert.
+    hub_cfg = HubConfig(name="Hub", telegram_token="", telegram_chat_id="",
+                        log_dir="logs")  # relative — must be rejected
+    hub = Hub(hub_cfg, [])
+
+    # Neutralise the other boot gates (same monkeypatches the other run() tests use)
+    # so any SystemExit we see came from assert_hub_log_dir_absolute, not them.
+    monkeypatch.setattr(hubmod, "assert_hub_credentials", lambda cfg: None)
+    monkeypatch.setattr(hubmod, "assert_consumer_imports", lambda projects: None)
+    # Intercept singleton to confirm it is never reached.
+    singleton_reached = {"n": 0}
+    hub._acquire_singleton = lambda: singleton_reached.__setitem__("n", singleton_reached["n"] + 1)
+
+    with pytest.raises(SystemExit):
+        await hub.run()
+
+    assert singleton_reached["n"] == 0, (
+        "assert_hub_log_dir_absolute must fire BEFORE _acquire_singleton"
+    )

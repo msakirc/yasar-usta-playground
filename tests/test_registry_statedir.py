@@ -71,3 +71,27 @@ projects:
 """, encoding="utf-8")
     _, projects = load_registry(reg, project_root="C:/kutay")
     assert projects[0].targets[0].heartbeat_file.replace("\\", "/").endswith("kutay/logs/orchestrator.heartbeat")
+
+
+def test_two_projects_get_distinct_state_dirs(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\x\AppData\Local")
+    reg = tmp_path / "r.yaml"
+    reg.write_text('''
+projects:
+  kutai:
+    root: C:/kutay
+    targets:
+      - {id: orch, command: ["run.py"], heartbeat_file: "${state_dir}/orchestrator.heartbeat"}
+  otherproj:
+    root: C:/other
+    targets:
+      - {id: worker, command: ["w.py"], heartbeat_file: "${state_dir}/orchestrator.heartbeat"}
+''', encoding="utf-8")
+    _, projects = load_registry(reg, project_root="C:/x")
+    by_id = {p.id: p for p in projects}
+    assert by_id["kutai"].state_dir != by_id["otherproj"].state_dir
+    assert by_id["kutai"].state_dir.replace("\\", "/").endswith("YasarUsta/kutai")
+    assert by_id["otherproj"].state_dir.replace("\\", "/").endswith("YasarUsta/otherproj")
+    # and the per-project token must not bleed across projects
+    assert "kutai" in by_id["kutai"].targets[0].heartbeat_file.replace("\\", "/")
+    assert "otherproj" in by_id["otherproj"].targets[0].heartbeat_file.replace("\\", "/")

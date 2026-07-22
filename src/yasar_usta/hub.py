@@ -55,7 +55,7 @@ def assert_consumer_imports(projects) -> None:
                 f"Run: pip install -e ../yasar_usta in that venv. ({(r.stderr or '').strip()})")
 
 
-def assert_state_dir_absolute(cfg) -> None:
+def assert_hub_log_dir_absolute(cfg) -> None:
     if not os.path.isabs(cfg.log_dir):
         raise SystemExit(
             f"[Yasar Usta] hub log_dir is relative ({cfg.log_dir!r}) — refusing to "
@@ -431,7 +431,7 @@ class Hub:
 
     # ── Run ──────────────────────────────────────────────────────────────
     async def run(self) -> None:
-        assert_state_dir_absolute(self.cfg)
+        assert_hub_log_dir_absolute(self.cfg)
         Path(self.cfg.log_dir).mkdir(parents=True, exist_ok=True)
         # Mutex is the singleton authority — gate BEFORE the file lock and any
         # pre_boot cleanup, so a second hub exits before killing anything (§4.1).
