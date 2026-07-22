@@ -18,6 +18,17 @@ from pathlib import Path
 logger = logging.getLogger("yasar_usta.subprocess")
 
 
+def state_snapshot_candidates(heartbeat_file: str | None) -> list:
+    """Where to look for the managed app's freeze snapshot, best match first.
+    Primary = sibling of the heartbeat file (state_dir/orchestrator.state.json)."""
+    out = []
+    if heartbeat_file:
+        out.append(os.path.join(os.path.dirname(heartbeat_file), "orchestrator.state.json"))
+        out.append(heartbeat_file + ".state.json")
+    out.append("logs/orchestrator.state.json")
+    return out
+
+
 def build_child_env(tgt, state_dir=None, base_env=None):
     """Merge base env + target env + YASAR_USTA_STATE_DIR (only if state_dir set).
 
@@ -239,10 +250,7 @@ class SubprocessManager:
                     state_msg = ""
                     if self.heartbeat_file:
                         from .heartbeat import read_state_snapshot
-                        candidates = [
-                            self.heartbeat_file + ".state.json",
-                            "logs/orchestrator.state.json",
-                        ]
+                        candidates = state_snapshot_candidates(self.heartbeat_file)
                         for path in candidates:
                             snap = read_state_snapshot(path)
                             if snap:

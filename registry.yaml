@@ -32,7 +32,7 @@ projects:
         cwd: "${project_root}"
         env:
           NERD_HERD_PROJECT_ROOT: "${project_root}"
-        heartbeat_file: "${project_root}/logs/orchestrator.heartbeat"
+        heartbeat_file: "${state_dir}/orchestrator.heartbeat"
         heartbeat_stale_seconds: 120
         heartbeat_healthy_seconds: 90
         restart_exit_code: 42
@@ -41,7 +41,7 @@ projects:
         stop_timeout: 30
         claude_name: Kutay
         claude_cmd: "${env:APPDATA}/npm/claude.cmd"
-        claude_signal_file: "${project_root}/logs/claude_remote.signal"
+        claude_signal_file: "${state_dir}/claude_remote.signal"
         extra_processes:
           - {exe: "llama-server.exe", label: "llama-server"}
         sidecars:
