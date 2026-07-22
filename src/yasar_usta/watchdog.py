@@ -75,16 +75,78 @@ def kill_pid(pid) -> None:
         pass
 
 
+def _read_ts(path) -> float | None:
+    """Read a float timestamp from a file, returning None on any error."""
+    try:
+        return float(Path(path).read_text().strip())
+    except Exception:
+        return None
+
+
 def run_once(alive_path, now: float, *, threshold: float = DEFAULT_STALE_SECONDS,
-             find_pids=find_hub_pids, kill=kill_pid) -> list:
+             find_pids=find_hub_pids, kill=kill_pid,
+             marker_path=None, grace: float = 3 * DEFAULT_INTERVAL_SECONDS,
+             stopped_path=None,
+             is_alive=None, alert=None) -> list:
     """One watchdog tick. Returns the PIDs it killed (empty if the hub is fresh
-    or dead)."""
+    or dead).
+
+    marker_path  — path to .watchdog_killed timestamp; guards against kill-loop
+                   on a hub that is slow to boot (grace period after a prior kill).
+    grace        — seconds to wait after a prior kill before killing again.
+    stopped_path — if this file exists, the hub was deliberately stopped; skip kill.
+    is_alive     — callable(pid) -> bool; if provided, verify each killed pid after
+                   the kill and alert on survivors (silent-zero-hub guard).
+    alert        — callable(msg); called when a kill survivor is detected.
+                   Defaults to print.
+    """
     ts = read_alive_ts(alive_path)
-    to_kill = decide_kill(ts, now, list(find_pids()), threshold)
+    if not is_stale(ts, now, threshold):
+        return []
+
+    # Deliberate-stop gate: hub.stopped present means an intentional shutdown.
+    if stopped_path and Path(stopped_path).exists():
+        print("[Yasar Watchdog] hub.stopped present — deliberate stop, no kill")
+        return []
+
+    # Grace gate: skip if we recently killed and the hub hasn't had time to reboot.
+    if marker_path:
+        kts = _read_ts(marker_path)
+        if kts is not None and (now - kts) < grace:
+            print(f"[Yasar Watchdog] within grace ({now - kts:.0f}s<{grace}s) — skip")
+            return []
+
+    to_kill = list(find_pids())
     for pid in to_kill:
-        print(f"[Yasar Watchdog] hub hung (alive stale) — killing PID {pid}")
+        print(f"[Yasar Watchdog] hub hung — killing PID {pid}")
         kill(pid)
+
+    # Refresh the kill-marker so the next tick's grace check is anchored here.
+    if to_kill and marker_path:
+        try:
+            Path(marker_path).write_text(str(now))
+        except Exception:
+            pass
+
+    # Verify-the-kill: alert on survivors (silent-zero-hub guard).
+    if to_kill and is_alive is not None:
+        survivors = [pid for pid in to_kill if is_alive(pid)]
+        if survivors:
+            msg = (f"[Yasar Watchdog] hub PID(s) {survivors} survived kill "
+                   "— possible zero-effective-hub")
+            _alert = alert if alert is not None else print
+            _alert(msg)
+
     return to_kill
+
+
+def is_pid_alive(pid) -> bool:
+    """Return True if the process is still running (best-effort)."""
+    try:
+        import psutil
+        return psutil.pid_exists(pid) and psutil.Process(pid).is_running()
+    except Exception:
+        return False
 
 
 def main(argv=None) -> int:
@@ -94,8 +156,26 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Yaşar Usta hub-liveness watchdog")
     ap.add_argument("--alive", required=True, help="path to hub.alive")
     ap.add_argument("--threshold", type=float, default=DEFAULT_STALE_SECONDS)
+    ap.add_argument("--marker", default=None,
+                    help="path to .watchdog_killed grace-marker "
+                         "(default: <alive-dir>/.watchdog_killed)")
+    ap.add_argument("--stopped", default=None,
+                    help="path to hub.stopped deliberate-stop sentinel "
+                         "(default: <alive-dir>/hub.stopped)")
     args = ap.parse_args(argv)
-    killed = run_once(args.alive, now=time.time(), threshold=args.threshold)
+
+    alive_p = Path(args.alive)
+    marker_path = args.marker or str(alive_p.with_name(".watchdog_killed"))
+    stopped_path = args.stopped or str(alive_p.with_name("hub.stopped"))
+
+    killed = run_once(
+        args.alive,
+        now=time.time(),
+        threshold=args.threshold,
+        marker_path=marker_path,
+        stopped_path=stopped_path,
+        is_alive=is_pid_alive,
+    )
     return 0 if not killed else 1
 
 
