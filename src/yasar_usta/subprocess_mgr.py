@@ -18,6 +18,21 @@ from pathlib import Path
 logger = logging.getLogger("yasar_usta.subprocess")
 
 
+def build_child_env(tgt, state_dir=None, base_env=None):
+    """Merge base env + target env + YASAR_USTA_STATE_DIR (only if state_dir set).
+
+    Args:
+        tgt: An object with an optional ``env`` dict attribute (e.g. GuardConfig).
+        state_dir: If set, injected as ``YASAR_USTA_STATE_DIR`` in the result.
+        base_env: Base environment mapping. Defaults to ``os.environ``.
+    """
+    env = {**(base_env if base_env is not None else os.environ),
+           **(getattr(tgt, "env", None) or {})}
+    if state_dir:
+        env["YASAR_USTA_STATE_DIR"] = state_dir
+    return env
+
+
 def _safe_rotator(source: str, dest: str) -> None:
     """Rename with retry — survives Dropbox/antivirus holding the file on Windows."""
     for attempt in range(5):
@@ -57,6 +72,7 @@ class SubprocessManager:
         heartbeat_file: str | None = None,
         heartbeat_stale_seconds: int = 120,
         env: dict | None = None,
+        state_dir: str | None = None,
     ):
         self.command = command
         self.log_dir = Path(log_dir)
@@ -65,6 +81,7 @@ class SubprocessManager:
         self.heartbeat_file = heartbeat_file
         self.heartbeat_stale_seconds = heartbeat_stale_seconds
         self.env = env or {}
+        self.state_dir = state_dir
 
         self.process: asyncio.subprocess.Process | None = None
         self.running: bool = False
@@ -121,9 +138,10 @@ class SubprocessManager:
 
         logger.info("Starting subprocess: %s", " ".join(self.command))
         _child_env = None
-        if self.env:
-            import os as _os
-            _child_env = {**_os.environ, **self.env}
+        if self.env or self.state_dir:
+            _child_env = {**os.environ, **self.env}
+            if self.state_dir:
+                _child_env["YASAR_USTA_STATE_DIR"] = self.state_dir
         try:
             self.process = await asyncio.create_subprocess_exec(
                 *self.command,

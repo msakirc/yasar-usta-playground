@@ -93,7 +93,7 @@ class Hub:
                 display = proj.name if single else f"{proj.name} · {tgt.app_name}"
                 self.supervisors[rid] = TargetSupervisor(
                     rid, tgt, notify=self._notify, reply_keyboard=self._reply_kb,
-                    display_name=display)
+                    display_name=display, state_dir=proj.state_dir)
 
     @staticmethod
     def _make_on_exit(proj):

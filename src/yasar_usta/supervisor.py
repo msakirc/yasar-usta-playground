@@ -47,7 +47,8 @@ class TargetSupervisor:
     def __init__(self, project_id: str, config: GuardConfig,
                  notify: Callable[..., Awaitable[None]],
                  reply_keyboard: dict | None = None,
-                 display_name: str | None = None):
+                 display_name: str | None = None,
+                 state_dir: str | None = None):
         self.project_id = project_id
         self.cfg = config
         # Human label shown on the dashboard (project name, not the target id).
@@ -62,6 +63,7 @@ class TargetSupervisor:
             stop_timeout=config.stop_timeout, heartbeat_file=config.heartbeat_file,
             heartbeat_stale_seconds=config.heartbeat_stale_seconds,
             env=config.env,
+            state_dir=state_dir,
         )
         self.backoff = BackoffTracker(steps=config.backoff_steps,
                                       reset_after=config.backoff_reset_after)
