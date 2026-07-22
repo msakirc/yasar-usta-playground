@@ -1,4 +1,28 @@
+import os
+
 from yasar_usta.registry import load_registry
+
+
+def test_reader_writer_filenames_match(tmp_path, monkeypatch):
+    """COUPLING GUARD (split-brain regression). The hub READS the orchestrator
+    heartbeat from this resolved path; kutai's src/app/hb_paths.heartbeat_paths()
+    WRITES it. They must be the identical <state_dir>/orchestrator.heartbeat or
+    the hub false-kills a healthy orchestrator. Locked in lockstep with
+    kutay/tests/yasar/test_heartbeat_path.py::test_writer_path_equals_state_dir_join_exact."""
+    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\x\AppData\Local")
+    reg = tmp_path / "r.yaml"
+    reg.write_text("""
+projects:
+  kutai:
+    root: C:/kutay
+    targets:
+      - {id: orch, command: ["run.py"], heartbeat_file: "${state_dir}/orchestrator.heartbeat"}
+""", encoding="utf-8")
+    _, projects = load_registry(reg, project_root="C:/kutay")
+    t = projects[0].targets[0]
+    sd = projects[0].state_dir
+    assert os.path.basename(t.heartbeat_file) == "orchestrator.heartbeat"
+    assert os.path.normpath(os.path.dirname(t.heartbeat_file)) == os.path.normpath(sd)
 
 
 def test_state_dir_token_resolves_per_project(tmp_path, monkeypatch):

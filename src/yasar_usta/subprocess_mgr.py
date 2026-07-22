@@ -148,11 +148,10 @@ class SubprocessManager:
             )
 
         logger.info("Starting subprocess: %s", " ".join(self.command))
-        _child_env = None
-        if self.env or self.state_dir:
-            _child_env = {**os.environ, **self.env}
-            if self.state_dir:
-                _child_env["YASAR_USTA_STATE_DIR"] = self.state_dir
+        # Build the child env via the tested helper so shipped == tested.
+        # None (inherit parent env untouched) only when neither env nor
+        # state_dir is set — otherwise inject YASAR_USTA_STATE_DIR.
+        _child_env = build_child_env(self, self.state_dir) if (self.env or self.state_dir) else None
         try:
             self.process = await asyncio.create_subprocess_exec(
                 *self.command,
