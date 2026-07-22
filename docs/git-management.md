@@ -46,6 +46,20 @@ Two layers prevent accidental pushes to public:
 1. **Pre-push hook** (`.git/hooks/pre-push`) — checks remote name, requires `YASAR_USTA_PUSH=1` env var. Shows a clear error message with instructions.
 2. **Bogus push URL** — even if the hook is bypassed (`--no-verify`), git can't resolve the URL.
 
+## Fresh clone setup
+
+Git hooks and remote config do **not** survive a `git clone`. After cloning, re-arm both guards:
+
+```bash
+# 1. Install the pre-push hook (tracked reference copy lives in scripts/)
+cp scripts/pre-push .git/hooks/pre-push        # chmod +x on POSIX
+
+# 2. Re-add the dual remotes
+git remote add playground https://github.com/msakirc/yasar-usta-playground.git
+git remote add public https://github.com/msakirc/yasar-usta.git
+git remote set-url --push public PUSH_BLOCKED__see_pre_push_hook
+```
+
 ## Why this setup
 
 - Claude Code sessions and vibe coding push freely without risk to the public repo.

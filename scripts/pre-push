@@ -1,0 +1,25 @@
+#!/bin/bash
+# Guard: prevent accidental pushes to the public yasar-usta repo.
+# To push intentionally:  YASAR_USTA_PUSH=1 git push public main
+#
+# VERSIONED REFERENCE COPY. Git hooks in .git/hooks/ do NOT survive a fresh clone,
+# so this tracked copy is the source of truth. On a fresh clone, install it:
+#   cp scripts/pre-push .git/hooks/pre-push    # (chmod +x on POSIX)
+# See docs/git-management.md.
+
+remote="$1"
+
+if [ "$remote" = "public" ] && [ "$YASAR_USTA_PUSH" != "1" ]; then
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════╗"
+    echo "║  BLOCKED: push to public yasar-usta repo                  ║"
+    echo "║                                                          ║"
+    echo "║  This is the public-facing repo. To push intentionally:  ║"
+    echo "║    YASAR_USTA_PUSH=1 git push public main                 ║"
+    echo "║                                                          ║"
+    echo "║  For dev work, push to playground instead:               ║"
+    echo "║    git push playground main                               ║"
+    echo "╚══════════════════════════════════════════════════════════╝"
+    echo ""
+    exit 1
+fi
