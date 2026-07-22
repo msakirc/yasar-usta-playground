@@ -433,6 +433,15 @@ class Hub:
     async def run(self) -> None:
         assert_hub_log_dir_absolute(self.cfg)
         Path(self.cfg.log_dir).mkdir(parents=True, exist_ok=True)
+        # Clear any stale deliberate-stop marker left by a prior shutdown.
+        # The create-on-deliberate-stop half is deferred to a future /shutdown-hub
+        # command — NOT silently omitted. Until then, the watchdog's stopped_path
+        # gate is inert (file never created); this unlink is a safety net for when
+        # that feature lands so a fresh boot always clears it.
+        try:
+            (Path(self.cfg.log_dir) / "hub.stopped").unlink(missing_ok=True)
+        except Exception:
+            pass
         # Mutex is the singleton authority — gate BEFORE the file lock and any
         # pre_boot cleanup, so a second hub exits before killing anything (§4.1).
         self._acquire_singleton()
