@@ -11,7 +11,6 @@ Manages any subprocess with:
 """
 
 from .config import GuardConfig, HubConfig, Messages, ProjectConfig, SidecarConfig
-from .guard import ProcessGuard
 from .heartbeat import (
     EXIT_RESTART,
     EXIT_STOP,
@@ -25,7 +24,6 @@ from .registry import load_registry
 from .supervisor import TargetSupervisor
 
 __all__ = [
-    "ProcessGuard",
     "GuardConfig",
     "Hub",
     "HubConfig",

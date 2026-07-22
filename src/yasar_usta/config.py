@@ -88,7 +88,12 @@ class SidecarConfig:
 
 @dataclass
 class GuardConfig:
-    """All configuration for ProcessGuard."""
+    """Per-target process configuration (consumed by TargetSupervisor).
+
+    Named ``GuardConfig`` for back-compat with the pre-hub ProcessGuard era
+    (that class is retired); the shape is unchanged so registry.yaml and the
+    supervisor keep working. Rename is a separate, mechanical follow-up.
+    """
 
     # What to manage
     name: str = "Yaşar Usta"
