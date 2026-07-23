@@ -101,6 +101,8 @@ def load_registry(path, project_root: str) -> tuple[HubConfig, list[ProjectConfi
         telegram_token=os.getenv(raw_hub.get("telegram_token_env", ""), ""),
         telegram_chat_id=os.getenv(raw_hub.get("telegram_chat_id_env", ""), ""),
         log_dir=_norm(_resolve(raw_hub.get("log_dir", "logs"), tokens)),
+        claude_enabled=raw_hub.get("claude_enabled", True),
+        claude_cmd=_norm(_resolve(raw_hub.get("claude_cmd"), tokens)),
     )
 
     projects: list[ProjectConfig] = []
