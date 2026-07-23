@@ -55,3 +55,45 @@ projects:
             health_url: "http://127.0.0.1:9881/health"
             pid_file: "${project_root}/logs/nerd_herd.pid"
             detached: true
+
+  bilinc:
+    name: Bilinç
+    root: "C:/Users/sakir/Dropbox/Workspaces/Bilinc/main"
+    messages:
+      announce: "🔧 *Bennn... Yaşar Usta!*\n\nBilinç katalog yüklemesini başlatıyorum..."
+      started: "✅ *Bilinç Katalog Yükleme başladı*"
+      stopped: "⏹ *Bilinç Katalog Yükleme durdu*\nDevam için /start."
+      hung: "🔴 Bilinç yükleyici dondu — Yaşar Usta {delay}sn içinde yeniden başlatıyor"
+      restarting: "♻️ *Bilinç yükleyici yeniden başlatılıyor...*"
+      down_prompt: "⚠️ Bilinç yükleyici durdu. Başlatmak için butona bas."
+      down_reply: "⏸ Bilinç yükleyici şu an kapalı."
+      starting: "🚀 Bilinç katalog yüklemesi başlatılıyor..."
+      btn_status: "🔧 Durum"
+      btn_logs: "📋 Loglar"
+      btn_remote: "🖥️ Claude Code"
+      remote_starting: "🖥️ Claude Code oturumu başlatılıyor..."
+      remote_not_found: "❌ `claude` bulunamadı. Claude Code kurulu mu?"
+    targets:
+      - id: catalog_load
+        app_name: Bilinç Katalog Yükleme
+        command:
+          - "C:/Users/sakir/AppData/Local/Programs/Python/Python310/python.exe"
+          - "${project_root}/mobile/py/free_loader.py"
+          - "--write"
+          - "--table"
+          - "bilinc-catalog-v2"
+          - "--heartbeat-file"
+          - "${project_root}/mobile/py/data/load_state/yasar.heartbeat"
+        cwd: "${project_root}"
+        env:
+          AWS_PROFILE: bilinc-prod
+          AWS_REGION: eu-central-1
+          PYTHONIOENCODING: utf-8
+        log_dir: "${state_dir}/logs"
+        heartbeat_file: "${project_root}/mobile/py/data/load_state/yasar.heartbeat"
+        heartbeat_stale_seconds: 600
+        heartbeat_healthy_seconds: 300
+        auto_restart: true
+        claude_name: Bilinç
+        claude_cmd: "${env:APPDATA}/npm/claude.cmd"
+        claude_signal_file: "${state_dir}/claude_remote.signal"
