@@ -41,6 +41,38 @@ def test_hub_builds_one_supervisor_per_target(tmp_path):
     assert set(hub.supervisors.keys()) == {"kutai", "foo"}
 
 
+def test_hub_builds_launchers_for_hub_and_each_project(tmp_path):
+    hub = _hub(tmp_path, ["kutai", "foo"])
+    # Hub self-launcher is first; routing id is the "__hub__" sentinel.
+    assert hub._launchers[0] == ("🖥️ Hub", "__hub__")
+    assert hub._remote_buttons["🖥️ Hub"] == "__hub__"
+    # Project launchers use the project id (single-target → rid == proj.id).
+    assert hub._remote_buttons["🖥️ Kutai"] == "kutai"
+    assert hub._remote_buttons["🖥️ Foo"] == "foo"
+
+
+def test_hub_reply_keyboard_includes_all_launchers(tmp_path):
+    hub = _hub(tmp_path, ["kutai", "foo"])
+    launch_row = hub._reply_kb["keyboard"][1]
+    texts = [b["text"] for b in launch_row]
+    assert texts == ["🖥️ Hub", "🖥️ Kutai", "🖥️ Foo"]
+
+
+def test_hub_rejects_colliding_launcher_labels(tmp_path):
+    # Two projects with the same display name → identical launcher labels →
+    # routing by exact label equality would be ambiguous → fail loud at boot.
+    hub_cfg = HubConfig(name="Hub", telegram_token="", telegram_chat_id="",
+                        log_dir=str(tmp_path / "h"))
+    c1 = GuardConfig(name="a", app_name="a", command=["python"],
+                     log_dir=str(tmp_path / "la"), backoff_steps=[1])
+    c2 = GuardConfig(name="b", app_name="b", command=["python"],
+                     log_dir=str(tmp_path / "lb"), backoff_steps=[1])
+    p1 = ProjectConfig(id="a", name="Same", targets=[c1])
+    p2 = ProjectConfig(id="b", name="Same", targets=[c2])
+    with pytest.raises(SystemExit):
+        Hub(hub_cfg, [p1, p2])
+
+
 def test_single_target_display_name_is_project_name(tmp_path):
     # _project sets ProjectConfig.name = pid.title(), cfg.name = pid.
     hub = _hub(tmp_path, ["kutai"])

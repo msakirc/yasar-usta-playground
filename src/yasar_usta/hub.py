@@ -114,8 +114,22 @@ class Hub:
         self._create_mutex = _win32_create_mutex
         self._singleton_exit = sys.exit
 
-        # Persistent reply keyboard, built once from hub Messages (spec R4).
-        self._reply_kb = build_hub_reply_keyboard(self.msgs)
+        # Claude Code launchers: hub self + one per project. Labels come from
+        # .name (Messages-independent → deterministic regardless of registry
+        # order). Routing in _route_text is by exact label equality, so labels
+        # MUST be unique — fail loud at boot on a collision.
+        self._launchers = [("🖥️ " + hub_cfg.name, "__hub__")]
+        for proj in projects:
+            self._launchers.append(("🖥️ " + proj.name, proj.id))
+        _labels = [lbl for lbl, _ in self._launchers]
+        if len(set(_labels)) != len(_labels):
+            raise SystemExit(
+                "[Yasar Usta] Claude launcher labels collide: "
+                f"{_labels} — hub/project display names must be unique.")
+        self._remote_buttons = {lbl: rid for lbl, rid in self._launchers}
+
+        # Persistent reply keyboard, built once from hub Messages + launchers.
+        self._reply_kb = build_hub_reply_keyboard(self.msgs, self._launchers)
 
         # One supervisor per target, keyed by a unique routing id. Single-target
         # project → routing id is the project id; multi-target → `${pid}:${tgt}`.
