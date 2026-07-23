@@ -59,7 +59,13 @@ trap {
 }
 
 $root     = "C:\Users\sakir\Dropbox\Workspaces\yasar_usta"
-$python   = Join-Path $root ".venv\Scripts\python.exe"
+# Use pythonw.exe (GUI subsystem) so the every-3-min self-heal + watchdog ticks
+# run WINDOWLESS - no console flashes on the desktop. The hub relays child
+# output via print() and the watchdog prints diagnostics; both entry points call
+# stdio.ensure_stdio() so a None stdout under pythonw is redirected to devnull
+# (real logs go to files). Falls back to python.exe if pythonw is missing.
+$python   = Join-Path $root ".venv\Scripts\pythonw.exe"
+if (-not (Test-Path $python)) { $python = Join-Path $root ".venv\Scripts\python.exe" }
 $taskName = "YasarUsta"
 
 if (-not (Test-Path $python)) { throw "venv python not found: $python" }

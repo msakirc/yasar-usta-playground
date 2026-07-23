@@ -56,6 +56,8 @@ async def _amain(args) -> None:
 
 
 def main(argv=None) -> None:
+    from .stdio import ensure_stdio
+    ensure_stdio()  # windowless pythonw launch has no stdout — guard print()s
     load_dotenv()
     args = _parse(sys.argv[1:] if argv is None else argv)
     try:

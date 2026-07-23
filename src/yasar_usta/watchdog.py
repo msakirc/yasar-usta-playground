@@ -153,6 +153,9 @@ def main(argv=None) -> int:
     import argparse
     import time
 
+    from .stdio import ensure_stdio
+    ensure_stdio()  # windowless pythonw launch has no stdout — guard print()s
+
     ap = argparse.ArgumentParser(description="Yaşar Usta hub-liveness watchdog")
     ap.add_argument("--alive", required=True, help="path to hub.alive")
     ap.add_argument("--threshold", type=float, default=DEFAULT_STALE_SECONDS)
