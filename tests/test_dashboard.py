@@ -4,12 +4,23 @@ from yasar_usta.config import Messages
 
 
 def test_hub_reply_keyboard_is_minimal():
-    kb = build_hub_reply_keyboard(Messages(btn_status="Durum", btn_logs="Loglar",
-                                           btn_remote="Claude"))
+    kb = build_hub_reply_keyboard(
+        Messages(btn_status="Durum", btn_logs="Loglar"),
+        launchers=[("🖥️ Yaşar Usta", "__hub__"), ("🖥️ Kutay", "kutai")])
     flat = str(kb)
-    assert "Durum" in flat and "Loglar" in flat and "Claude" in flat
+    assert "Durum" in flat and "Loglar" in flat
+    assert "🖥️ Yaşar Usta" in flat and "🖥️ Kutay" in flat
     # No per-target Start/Restart/Stop on the persistent keyboard (spec R4)
     assert "Start" not in flat and "Restart" not in flat
+
+
+def test_hub_reply_keyboard_one_button_per_launcher():
+    kb = build_hub_reply_keyboard(
+        Messages(),
+        launchers=[("🖥️ Hub", "__hub__"), ("🖥️ Kutay", "kutai"),
+                   ("🖥️ Bilinç", "bilinc")])
+    launch_row = kb["keyboard"][1]
+    assert [b["text"] for b in launch_row] == ["🖥️ Hub", "🖥️ Kutay", "🖥️ Bilinç"]
 
 
 def test_dashboard_lists_all_projects():

@@ -89,13 +89,15 @@ def build_dashboard_keyboard(projects: list[dict],
     return {"inline_keyboard": rows}
 
 
-def build_hub_reply_keyboard(messages: Messages) -> dict:
-    """Minimal persistent reply keyboard for the hub (spec R4: Dashboard /
-    Logs / Remote). Per-target actions live on the inline dashboard, not here."""
+def build_hub_reply_keyboard(messages: Messages, launchers: list) -> dict:
+    """Persistent reply keyboard for the hub: a Status/Logs row plus one Claude
+    Code launcher button per (label, routing_id) in ``launchers`` (hub self +
+    one per project). Per-target Start/Restart/Stop live on the inline
+    dashboard, not here (spec R4)."""
     return {
         "keyboard": [
             [{"text": messages.btn_status}, {"text": messages.btn_logs}],
-            [{"text": messages.btn_remote}],
+            [{"text": label} for label, _rid in launchers],
         ],
         "resize_keyboard": True,
         "is_persistent": True,
