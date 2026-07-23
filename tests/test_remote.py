@@ -72,3 +72,40 @@ from yasar_usta import remote as _remote_mod
 def test_start_claude_remote_accepts_session_label():
     sig = inspect.signature(_remote_mod.start_claude_remote)
     assert "session_label" in sig.parameters
+
+
+@pytest.mark.asyncio
+async def test_announce_and_launch_reports_url(monkeypatch):
+    from yasar_usta.config import Messages
+    notified = []
+
+    async def _notify(text):
+        notified.append(text)
+
+    async def _fake_start(cmd, name=None, cwd=None, session_dir=None, session_label=None):
+        assert name == "X" and cwd == "." and session_label == "lbl"
+        return 4242, "https://claude.ai/s/abc"
+
+    monkeypatch.setattr(remote, "start_claude_remote", _fake_start)
+    monkeypatch.setattr(remote, "list_sessions", lambda d: [])
+
+    await remote.announce_and_launch(
+        _notify, Messages(), "claude.cmd",
+        name="X", cwd=".", session_dir=None, label="lbl")
+
+    assert any("4242" in t for t in notified)
+
+
+@pytest.mark.asyncio
+async def test_announce_and_launch_no_cmd_notifies_not_found():
+    from yasar_usta.config import Messages
+    notified = []
+
+    async def _notify(text):
+        notified.append(text)
+
+    await remote.announce_and_launch(
+        _notify, Messages(), None,
+        name="X", cwd=".", session_dir=None, label="lbl")
+
+    assert notified == [Messages().remote_not_found]

@@ -11,7 +11,7 @@ from typing import Awaitable, Callable
 
 from .backoff import BackoffTracker
 from .config import GuardConfig
-from .remote import find_claude_cmd, list_sessions, start_claude_remote
+from .remote import announce_and_launch, find_claude_cmd
 from .sidecar import SidecarManager
 from .subprocess_mgr import SubprocessManager
 
@@ -191,37 +191,15 @@ class TargetSupervisor:
     # ── Claude remote ─────────────────────────────────────────────────
 
     async def _handle_remote(self) -> None:
-        if not self._claude_cmd:
-            await self.notify(self.msgs.remote_not_found)
-            return
-
-        # Report any existing live sessions
-        alive = list_sessions(self._claude_session_dir)
-        if alive:
-            lines = ["🖥️ *Active Claude sessions:*"]
-            for pid, url in alive:
-                if url:
-                    lines.append(f"  • PID `{pid}` — [Connect]({url})")
-                else:
-                    lines.append(f"  • PID `{pid}` (no URL)")
-            lines.append("\nStarting a new session...")
-            await self.notify("\n".join(lines))
-        else:
-            await self.notify(self.msgs.remote_starting)
-
-        pid, url = await start_claude_remote(
+        await announce_and_launch(
+            self.notify,
+            self.msgs,
             self._claude_cmd,
             name=self.cfg.claude_name or self.cfg.app_name,
             cwd=self.cfg.cwd,
             session_dir=self._claude_session_dir,
-            session_label=self.project_id,
+            label=self.project_id,
         )
-        if pid is None:
-            await self.notify(self.msgs.remote_failed.format(error=url or "process failed to start"))
-        elif url:
-            await self.notify(self.msgs.remote_started.format(url=url, pid=pid))
-        else:
-            await self.notify(self.msgs.remote_started_no_url.format(pid=pid))
 
     # ── Signal file watcher ───────────────────────────────────────────
 

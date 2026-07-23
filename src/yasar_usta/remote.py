@@ -90,6 +90,52 @@ def _remove_session_files(session_dir: Path, pid: int) -> None:
             pass
 
 
+# ── Announce + launch (shared by supervisor targets and the hub self-button) ──
+
+async def announce_and_launch(
+    notify,
+    msgs,
+    claude_cmd: str | None,
+    name: str,
+    cwd: str | None,
+    session_dir: str | Path | None,
+    label: str,
+) -> None:
+    """Report any live sessions, launch a new Claude remote session, report result.
+
+    ``notify`` is an async ``callable(text) -> None``; ``msgs`` is a Messages
+    instance supplying the remote_* strings. Shared so the hub self-launcher and
+    each target's ``_handle_remote`` use one code path.
+    """
+    if not claude_cmd:
+        await notify(msgs.remote_not_found)
+        return
+
+    alive = list_sessions(session_dir) if session_dir else []
+    if alive:
+        lines = ["🖥️ *Active Claude sessions:*"]
+        for pid, url in alive:
+            if url:
+                lines.append(f"  • PID `{pid}` — [Connect]({url})")
+            else:
+                lines.append(f"  • PID `{pid}` (no URL)")
+        lines.append("\nStarting a new session...")
+        await notify("\n".join(lines))
+    else:
+        await notify(msgs.remote_starting)
+
+    pid, url = await start_claude_remote(
+        claude_cmd, name=name, cwd=cwd,
+        session_dir=session_dir, session_label=label,
+    )
+    if pid is None:
+        await notify(msgs.remote_failed.format(error=url or "process failed to start"))
+    elif url:
+        await notify(msgs.remote_started.format(url=url, pid=pid))
+    else:
+        await notify(msgs.remote_started_no_url.format(pid=pid))
+
+
 # ── Start ─────────────────────────────────────────────────────────────
 
 async def start_claude_remote(
