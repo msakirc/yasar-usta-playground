@@ -102,22 +102,44 @@ def _quiesce(hub):
 
 
 @pytest.mark.asyncio
-async def test_restart_hub_exits_42_and_keeps_popen_bridge(tmp_path, monkeypatch):
-    """_do_restart_hub must exit NONZERO (42) so Task Scheduler's
-    restart-on-failure is a safety-net if the detached Popen self-restart
-    fails — while STILL spawning the Popen bridge (instant restart, no
-    1-min Scheduler gap). The mutex + IgnoreNew prevent a double hub."""
+async def test_restart_hub_relaunches_tracked_and_exits_zero(tmp_path, monkeypatch):
+    """I1: /restart_hub relaunches as a TRACKED Task Scheduler instance (via a
+    detached schtasks-triggering helper), NOT an untracked Popen orphan, and
+    exits 0 (clean handoff) so Task Scheduler does not flag a phantom failure /
+    keep bouncing the mutex."""
     import yasar_usta.hub as hubmod
     hub = _hub(tmp_path, ["kutai"])
     _quiesce(hub)
-    popen = {"n": 0}
+    popen_cmds = []
     monkeypatch.setattr(hubmod._subprocess, "Popen",
-                        lambda *a, **k: popen.__setitem__("n", popen["n"] + 1))
+                        lambda cmd, *a, **k: popen_cmds.append(cmd))
     exits = []
     monkeypatch.setattr(hubmod.os, "_exit", lambda code: exits.append(code))
     await hub._do_restart_hub()
-    assert popen["n"] == 1     # instant self-restart bridge preserved
-    assert exits == [42]       # nonzero → Scheduler relaunches if the Popen died
+    assert exits == [0]                 # clean handoff, not a failure exit
+    assert len(popen_cmds) == 1         # exactly one relaunch helper spawned
+    flat = " ".join(popen_cmds[0])
+    assert "schtasks" in flat and "YasarUsta" in flat  # triggers the tracked task
+
+
+@pytest.mark.asyncio
+async def test_run_skips_start_when_hub_stopped_present(tmp_path, monkeypatch):
+    """I2: a hub.stopped marker (left by /shutdown_hub) makes run() return
+    WITHOUT acquiring the mutex or starting — even under the every-3-min
+    keep-alive trigger or a logon — and it must NOT delete the marker, so the
+    deliberate stop survives until the user explicitly starts (start_kutai.bat
+    clears it)."""
+    import yasar_usta.hub as hubmod
+    monkeypatch.setattr(hubmod, "assert_hub_credentials", lambda cfg: None)
+    monkeypatch.setattr(hubmod, "assert_consumer_imports", lambda projects: None)
+    hub = _hub(tmp_path, ["kutai"])
+    Path(hub.cfg.log_dir).mkdir(parents=True, exist_ok=True)
+    (Path(hub.cfg.log_dir) / "hub.stopped").write_text("1")
+    acquired = {"n": 0}
+    hub._acquire_singleton = lambda: acquired.__setitem__("n", acquired["n"] + 1)
+    await asyncio.wait_for(hub.run(), timeout=5)
+    assert acquired["n"] == 0  # gated out before the singleton mutex
+    assert (Path(hub.cfg.log_dir) / "hub.stopped").exists()  # stop survives
 
 
 @pytest.mark.asyncio

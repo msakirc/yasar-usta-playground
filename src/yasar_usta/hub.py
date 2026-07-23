@@ -36,6 +36,37 @@ def build_restart_command(registry_args: list) -> list:
     return [sys.executable, "-m", "yasar_usta"] + list(registry_args)
 
 
+# The Layer-0 Task Scheduler task name (registered by
+# scripts/install_yasar_autostart.ps1). Kept in sync with that installer.
+_SCHEDULED_TASK_NAME = "YasarUsta"
+
+
+def build_tracked_restart_command(registry_args: list) -> list:
+    """Return argv for a detached helper that relaunches the hub as a *tracked*
+    Task Scheduler instance (I1), instead of an untracked ``Popen`` orphan.
+
+    The helper sleeps ~2s so THIS hub process fully exits first — releasing the
+    singleton mutex and ending the running task instance, so the task's
+    ``IgnoreNew`` does not suppress the relaunch — then triggers ``schtasks
+    /Run``. If the task is not registered (a dev box with no Phase-4 install),
+    it falls back to a direct ``-m yasar_usta`` spawn, so /restart_hub still
+    works everywhere. The fallback inherits the helper's CWD (the hub root),
+    which the caller sets, so ``__main__.load_dotenv`` still finds the hub .env.
+    """
+    fallback = build_restart_command(registry_args)
+    code = (
+        "import time,subprocess\n"
+        "time.sleep(2)\n"
+        "try:\n"
+        f"    ok=subprocess.run(['schtasks','/Run','/TN','{_SCHEDULED_TASK_NAME}']).returncode==0\n"
+        "except Exception:\n"
+        "    ok=False\n"
+        "if not ok:\n"
+        f"    subprocess.Popen({fallback!r}, creationflags=0x00000008|0x08000000)\n"
+    )
+    return [sys.executable, "-c", code]
+
+
 def assert_consumer_imports(projects) -> None:
     """Each project's venv must resolve the heartbeat client symbols before we
     manage its child. Fail loud (SystemExit) rather than a late ImportError."""
@@ -317,17 +348,16 @@ class Hub:
         # hub repo root so __main__.load_dotenv() finds the hub .env on restart.
         # hub.py is at src/yasar_usta/hub.py → parents[2] is the repo root.
         _hub_root = str(Path(__file__).resolve().parents[2])
-        _sp.Popen(build_restart_command(sys.argv[1:]), close_fds=True,
+        # Relaunch as a TRACKED Task Scheduler instance (I1), not an untracked
+        # Popen orphan: a detached helper waits for THIS process to exit, then
+        # triggers `schtasks /Run` (falling back to a direct spawn off-Scheduler).
+        # Then exit 0 — a deliberate restart is a clean handoff, NOT a failure,
+        # so the scheduler does not ALSO relaunch/flag it. This avoids the
+        # mutex-bounce churn + "task shows failed while the hub runs" diagnostics
+        # of the old exit-42 self-Popen path.
+        _sp.Popen(build_tracked_restart_command(sys.argv[1:]), close_fds=True,
                   cwd=_hub_root, **kwargs)
-        # Exit NONZERO (42) so the Layer-0 Task Scheduler task
-        # (restart-on-failure, RestartCount 999) becomes a safety-net: if the
-        # detached Popen bridge above ever fails to bring a replacement up, the
-        # scheduler relaunches within its RestartInterval. The Popen remains the
-        # PRIMARY (instant) restarter; the singleton mutex + `IgnoreNew` make the
-        # scheduler's relaunch a no-op while the Popen'd hub holds the mutex, so
-        # there is never a double hub. Pre-Phase-4 (no task registered) the code
-        # is inert — nobody reads 42 — and the Popen bridge restarts as before.
-        os._exit(42)
+        os._exit(0)
 
     # ── Hub deliberate shutdown (stopped-gate create-half, R1) ───────────
     async def _do_shutdown_hub(self) -> None:
@@ -335,13 +365,15 @@ class Hub:
 
         Unlike `_do_restart_hub`, this does NOT relaunch: it writes the
         `hub.stopped` sentinel — the create-half the watchdog's deliberate-stop
-        gate was waiting on — then exits 0 so Task Scheduler's
-        restart-on-failure does NOT bring the hub back. The sentinel is written
-        BEFORE quiescing so the 3-min watchdog can never race a kill against a
-        hub that is going down on purpose. `Hub.run()` boot-unlinks the sentinel
-        on the next start, so this is a soft, session-scoped stop: the next
-        logon's at-logon trigger relaunches a clean hub. For a permanent stop,
-        disable the `YasarUsta` scheduled task.
+        gate was waiting on — then exits 0 so Task Scheduler's restart-on-failure
+        does NOT bring the hub back. The sentinel is written BEFORE quiescing so
+        the 3-min watchdog can never race a kill against a hub going down on
+        purpose. The stop STAYS down: `Hub.run()` honors the same sentinel (I2)
+        and refuses to start under the keep-alive trigger or a logon — so a
+        deliberate stop survives reboots. The user restarts explicitly via
+        start_kutai.bat (which deletes the marker before `schtasks /Run`), or by
+        removing `%LOCALAPPDATA%\\YasarUsta\\hub\\hub.stopped` (the keep-alive
+        then brings it back within 3 min).
         """
         self._shutdown = True
         try:
@@ -488,15 +520,15 @@ class Hub:
     async def run(self) -> None:
         assert_hub_log_dir_absolute(self.cfg)
         Path(self.cfg.log_dir).mkdir(parents=True, exist_ok=True)
-        # Clear any stale deliberate-stop marker left by a prior shutdown.
-        # The create-on-deliberate-stop half is deferred to a future /shutdown-hub
-        # command — NOT silently omitted. Until then, the watchdog's stopped_path
-        # gate is inert (file never created); this unlink is a safety net for when
-        # that feature lands so a fresh boot always clears it.
-        try:
-            (Path(self.cfg.log_dir) / "hub.stopped").unlink(missing_ok=True)
-        except Exception:
-            pass
+        # Deliberate-stop gate (I2): if /shutdown_hub left a hub.stopped marker,
+        # do NOT start — even under the every-3-min keep-alive trigger or a
+        # logon. This is what makes /shutdown_hub actually STAY down (the
+        # watchdog already skips its kill on this marker). NOT auto-cleared on
+        # boot: the stop survives reboots until the user starts on purpose
+        # (start_kutai.bat deletes the marker before `schtasks /Run`).
+        if (Path(self.cfg.log_dir) / "hub.stopped").exists():
+            logger.info("hub.stopped present — deliberate stop, not starting")
+            return
         # Mutex is the singleton authority — gate BEFORE the file lock and any
         # pre_boot cleanup, so a second hub exits before killing anything (§4.1).
         self._acquire_singleton()
