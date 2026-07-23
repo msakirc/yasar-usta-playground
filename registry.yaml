@@ -94,6 +94,7 @@ projects:
         heartbeat_stale_seconds: 600
         heartbeat_healthy_seconds: 300
         auto_restart: true
+        auto_start: false
         claude_name: Bilinç
         claude_cmd: "${env:APPDATA}/npm/claude.cmd"
         claude_signal_file: "${state_dir}/claude_remote.signal"

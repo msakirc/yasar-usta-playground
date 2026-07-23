@@ -28,6 +28,7 @@ def test_bilinc_catalog_load_target():
     assert not getattr(bl, "venv_python", None)
     # crash-resume babysitting
     assert t.auto_restart is True
+    assert t.auto_start is False   # parked: hub does NOT auto-launch on boot; /start only
 
 
 def test_bilinc_heartbeat_matches_arg_and_is_not_checkpoint():

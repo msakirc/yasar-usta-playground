@@ -76,6 +76,7 @@ def _build_target(raw: dict, tokens: dict) -> GuardConfig:
         log_file=raw.get("log_file"),
         stop_timeout=raw.get("stop_timeout", 30),
         auto_restart=raw.get("auto_restart", True),
+        auto_start=raw.get("auto_start", True),
         backoff_steps=raw.get("backoff_steps", [5, 15, 60, 300]),
         claude_enabled=raw.get("claude_enabled", True),
         claude_cmd=raw.get("claude_cmd"),

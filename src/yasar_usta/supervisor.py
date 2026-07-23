@@ -307,15 +307,21 @@ class TargetSupervisor:
             for sc in self.sidecars.values():
                 if sc.command:
                     await sc.start()
-            # Initial app start (mirrors guard.py:645-652):
-            await self._start_app()
-            if self.subprocess.running:
-                self.backoff.mark_started()
-                await self._notify_started()
-                await self._start_signal_watcher()
+            # Initial app start (mirrors guard.py:645-652) — unless auto_start disabled.
+            if self.cfg.auto_start:
+                await self._start_app()
+                if self.subprocess.running:
+                    self.backoff.mark_started()
+                    await self._notify_started()
+                    await self._start_signal_watcher()
+                else:
+                    logger.info("%s: initial start failed — waiting for start command",
+                                self.project_id)
             else:
-                logger.info("%s: initial start failed — waiting for start command",
+                logger.info("%s: auto_start disabled — parked, waiting for /start",
                             self.project_id)
+                await self._notify_stopped()
+                await self._park_until_wake()
         except Exception as e:
             logger.error("%s: startup error: %s", self.project_id, e)
 

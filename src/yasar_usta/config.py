@@ -124,6 +124,7 @@ class GuardConfig:
 
     # Process management
     auto_restart: bool = True
+    auto_start: bool = True
     stop_timeout: int = 30
 
     # Claude Code remote

@@ -225,3 +225,49 @@ async def test_crash_backoff_then_restart(tmp_path):
     await sup.run()
     assert fake.started >= 2, "crashed app was not restarted after backoff"
     assert sent, "crash notification not sent"
+
+
+# ── auto_start: false (parked target) ────────────────────────────────────
+@pytest.mark.asyncio
+async def test_auto_start_false_does_not_start_on_boot(tmp_path):
+    """auto_start=False: run() must NOT launch the app on boot — it parks. Guards
+    against the -1 'hung' path auto-launching a target meant to stay dormant."""
+    fake = _FakeSub([])
+    sup, _ = _run_sup(tmp_path, fake, auto_start=False)
+    starts = []
+    async def start():
+        starts.append(1); fake.running = True
+    sup._start_app = start
+    orig = sup._notify_stopped
+    async def notify_then_shutdown():
+        await orig(); sup._shutdown = True
+    sup._notify_stopped = notify_then_shutdown
+    await sup.run()
+    assert starts == [], "auto_start=False must not start the app on boot"
+
+
+@pytest.mark.asyncio
+async def test_auto_start_false_starts_on_explicit_start(tmp_path):
+    """auto_start=False still starts when the user taps /start (intent set at boot)."""
+    fake = _FakeSub([])
+    sup, _ = _run_sup(tmp_path, fake, auto_start=False)
+    starts = []
+    async def start():
+        starts.append(1); fake.running = True; sup._shutdown = True
+    sup._start_app = start
+    sup._start_requested = True
+    await sup.run()
+    assert starts == [1], "auto_start=False must start when /start is requested"
+
+
+@pytest.mark.asyncio
+async def test_auto_start_true_default_starts_on_boot(tmp_path):
+    """Default (no auto_start / True) still launches on boot — KutAI's behavior."""
+    fake = _FakeSub([])
+    sup, _ = _run_sup(tmp_path, fake)
+    starts = []
+    async def start():
+        starts.append(1); fake.running = True; sup._shutdown = True
+    sup._start_app = start
+    await sup.run()
+    assert starts == [1], "default auto_start=True must start on boot"
