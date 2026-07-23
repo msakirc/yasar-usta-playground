@@ -158,6 +158,9 @@ class HubConfig:
     telegram_chat_id: str = ""
     log_dir: str = "logs"  # where the hub lock + hub meta log live
     messages: Messages = field(default_factory=Messages)
+    # Claude Code remote (hub self-launcher). claude_cmd=None → auto-discover.
+    claude_enabled: bool = True
+    claude_cmd: str | None = None
 
 
 @dataclass
