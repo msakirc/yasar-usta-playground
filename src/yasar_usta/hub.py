@@ -281,6 +281,11 @@ class Hub:
                 await sc.start()
                 await self._notify(f"✅ *{name}* yeniden başlatıldı")
             return
+        if cb_data == "remote:__hub__":
+            t = asyncio.create_task(self._handle_self_remote())
+            self._bg_tasks.add(t)
+            t.add_done_callback(self._bg_tasks.discard)
+            return
         if ":" not in cb_data:
             return
         verb, pid = cb_data.split(":", 1)
@@ -338,6 +343,24 @@ class Hub:
             url = yaz.health_url.replace("/health", "/")
             formatted += f"\n\n📊 [Yazbunu Log Viewer]({url})"
         await self._notify(formatted)
+
+    # ── Claude Code: hub self-launcher ──────────────────────────────────
+    async def _handle_self_remote(self) -> None:
+        """Start a `claude remote-control` session in the hub's own repo root.
+
+        The hub has no supervisor, so this mirrors `TargetSupervisor._handle_remote`
+        via the shared helper. cwd is the hub repo root (three parents up from
+        this file); session files live under the hub's out-of-Dropbox log_dir.
+        """
+        from .remote import announce_and_launch, find_claude_cmd
+        cmd = find_claude_cmd(self.cfg.claude_cmd) if self.cfg.claude_enabled else None
+        session_dir = str(Path(self.cfg.log_dir) / "claude_sessions")
+        repo_root = str(Path(__file__).resolve().parents[2])
+        await announce_and_launch(
+            self._notify, self.msgs, cmd,
+            name=self.cfg.name, cwd=repo_root,
+            session_dir=session_dir, label="hub",
+        )
 
     # ── Hub self-restart (spec finding #1) ───────────────────────────────
     async def _do_restart_hub(self) -> None:
@@ -506,8 +529,11 @@ class Hub:
             else:
                 await self._send_logs_for(sup, n)
             return
-        if text.startswith("/remote") or text == self.msgs.btn_remote:
-            await self._for_bare_target("remote")
+        # Claude Code launcher buttons (reply-keyboard taps arrive as label text).
+        # Reuse the existing remote:{rid} callback path (fire-and-forget). The
+        # hub sentinel "__hub__" is handled by _route_callback → _handle_self_remote.
+        if text in self._remote_buttons:
+            await self._route_callback(f"remote:{self._remote_buttons[text]}", None)
             return
         # Bare per-target action verbs (start/restart/stop) — slash aliases only.
         if text.startswith("/kutai_start"):

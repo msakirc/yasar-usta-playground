@@ -497,3 +497,82 @@ async def test_run_rejects_relative_log_dir(tmp_path, monkeypatch):
     assert singleton_reached["n"] == 0, (
         "assert_hub_log_dir_absolute must fire BEFORE _acquire_singleton"
     )
+
+
+async def _drain():
+    # Let fire-and-forget tasks scheduled via asyncio.create_task run.
+    for _ in range(3):
+        await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_reply_button_routes_to_project_remote(tmp_path):
+    hub = _hub(tmp_path, ["kutai"])
+    hits = {"n": 0}
+
+    async def _hr():
+        hits["n"] += 1
+
+    hub.supervisors["kutai"]._handle_remote = _hr
+    await hub._route_text("🖥️ Kutai")
+    await _drain()
+    assert hits["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_reply_button_routes_to_hub_self_remote(tmp_path):
+    hub = _hub(tmp_path, ["kutai"])
+    hits = {"n": 0}
+
+    async def _sr():
+        hits["n"] += 1
+
+    hub._handle_self_remote = _sr
+    await hub._route_text("🖥️ Hub")
+    await _drain()
+    assert hits["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_slash_remote_no_longer_launches(tmp_path):
+    hub = _hub(tmp_path, ["kutai"])
+    called = {"remote": 0, "dash": 0}
+
+    async def _dash(edit_message_id=None):
+        called["dash"] += 1
+
+    async def _hr():
+        called["remote"] += 1
+
+    hub._send_dashboard = _dash
+    hub.supervisors["kutai"]._handle_remote = _hr
+    await hub._route_text("/remote")
+    await _drain()
+    assert called["remote"] == 0      # the /remote route is gone
+    assert called["dash"] == 1        # unknown /cmd falls through to dashboard
+
+
+@pytest.mark.asyncio
+async def test_hub_self_remote_uses_repo_root_and_hub_session_dir(tmp_path, monkeypatch):
+    import yasar_usta.remote as remotemod
+    from pathlib import Path
+    import yasar_usta.hub as hubmod
+
+    hub = _hub(tmp_path, ["kutai"])
+    hub.cfg.claude_cmd = "claude.cmd"
+    hub._notify = lambda *a, **k: asyncio.sleep(0)
+    captured = {}
+
+    async def _fake_launch(notify, msgs, claude_cmd, name, cwd, session_dir, label):
+        captured.update(name=name, cwd=cwd, session_dir=session_dir, label=label)
+
+    monkeypatch.setattr(remotemod, "announce_and_launch", _fake_launch)
+
+    await hub._handle_self_remote()
+
+    assert captured["name"] == "Hub"
+    assert captured["label"] == "hub"
+    assert captured["session_dir"].endswith("claude_sessions")
+    assert "hublogs" in captured["session_dir"]      # cfg.log_dir = tmp/hublogs
+    expected_root = str(Path(hubmod.__file__).resolve().parents[2])
+    assert captured["cwd"] == expected_root
