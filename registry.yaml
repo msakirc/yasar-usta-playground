@@ -4,6 +4,15 @@ hub:
   telegram_chat_id_env: TELEGRAM_ADMIN_CHAT_ID
   log_dir: "${env:LOCALAPPDATA}/YasarUsta/hub"   # hub state out of Dropbox from day 1
   claude_cmd: "${env:APPDATA}/npm/claude.cmd"    # hub self-launcher (same as projects)
+  messages:                                      # hub's OWN strings (deterministic; not inherited from a project)
+    announce: "🔧 *Bennn... Yaşar Usta!*\n\n{app_name} başlatılıyor..."
+    btn_status: "🔧 Durum"
+    btn_logs: "📋 Loglar"
+    remote_starting: "🖥️ Claude Code oturumu başlatılıyor..."
+    remote_not_found: "❌ `claude` bulunamadı. Claude Code kurulu mu?"
+    remote_started: "🖥️ *Claude Code uzaktan kontrol*\n\n🔗 [Bağlan]({url})\n\nPID: `{pid}`"
+    remote_started_no_url: "🖥️ *Claude Code uzaktan kontrol başladı*\nPID: `{pid}`"
+    remote_failed: "❌ Claude Code başlatılamadı: `{error}`"
 
 projects:
   kutai:

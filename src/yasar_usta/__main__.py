@@ -25,11 +25,8 @@ async def _amain(args) -> None:
         for proj in projects:
             for tgt in proj.targets:
                 tgt.auto_restart = False
-    for proj in projects:
-        if getattr(proj, "messages", None) is not None:
-            hub_cfg.messages = proj.messages
-            for tgt in proj.targets:
-                tgt.messages = proj.messages
+    # Message wiring (hub messages + per-target inheritance) is owned by
+    # load_registry — deterministic and independent of project order.
     hub = Hub(hub_cfg, projects)
 
     def _sig(sig, frame):

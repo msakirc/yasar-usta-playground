@@ -95,7 +95,13 @@ def load_registry(path, project_root: str) -> tuple[HubConfig, list[ProjectConfi
 
     tokens = {"project_root": project_root}
 
+    _msg_fields = {f.name for f in dataclasses.fields(Messages)}
+
     raw_hub = data.get("hub", {})
+    raw_hub_msgs = raw_hub.get("messages")
+    hub_msgs = Messages()
+    if raw_hub_msgs:
+        hub_msgs = Messages(**{k: v for k, v in raw_hub_msgs.items() if k in _msg_fields})
     hub = HubConfig(
         name=raw_hub.get("name", "Yaşar Usta"),
         telegram_token=os.getenv(raw_hub.get("telegram_token_env", ""), ""),
@@ -103,6 +109,7 @@ def load_registry(path, project_root: str) -> tuple[HubConfig, list[ProjectConfi
         log_dir=_norm(_resolve(raw_hub.get("log_dir", "logs"), tokens)),
         claude_enabled=raw_hub.get("claude_enabled", True),
         claude_cmd=_norm(_resolve(raw_hub.get("claude_cmd"), tokens)),
+        messages=hub_msgs,
     )
 
     projects: list[ProjectConfig] = []
@@ -118,8 +125,12 @@ def load_registry(path, project_root: str) -> tuple[HubConfig, list[ProjectConfi
         raw_msgs = raw_proj.get("messages")
         msgs = None
         if raw_msgs:
-            valid = {f.name for f in dataclasses.fields(Messages)}
-            msgs = Messages(**{k: v for k, v in raw_msgs.items() if k in valid})
+            msgs = Messages(**{k: v for k, v in raw_msgs.items() if k in _msg_fields})
+            # Targets inherit their project's messages at parse time (single
+            # source of truth). Previously done in __main__, which also — as a
+            # side effect — clobbered the hub's messages with the last project's.
+            for t in targets:
+                t.messages = msgs
         projects.append(ProjectConfig(
             id=pid,
             name=raw_proj.get("name", pid),
