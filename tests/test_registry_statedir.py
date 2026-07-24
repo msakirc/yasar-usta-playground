@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 from yasar_usta.registry import load_registry
 
 
@@ -95,3 +97,75 @@ projects:
     # and the per-project token must not bleed across projects
     assert "kutai" in by_id["kutai"].targets[0].heartbeat_file.replace("\\", "/")
     assert "otherproj" in by_id["otherproj"].targets[0].heartbeat_file.replace("\\", "/")
+
+
+def test_duplicate_heartbeat_file_in_one_project_rejected(tmp_path, monkeypatch):
+    """R2 GATE. Two targets in ONE project share proj.state_dir, so identical
+    heartbeat_file specs resolve to the SAME path → one target's writes clobber
+    the other's, and the hung-detector reads the wrong heartbeat. Fail loud at
+    load time rather than false-kill a healthy target at runtime."""
+    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\x\AppData\Local")
+    reg = tmp_path / "r.yaml"
+    reg.write_text('''
+projects:
+  kutai:
+    root: C:/kutay
+    targets:
+      - {id: orch, command: ["run.py"], heartbeat_file: "${state_dir}/orchestrator.heartbeat"}
+      - {id: sidecar, command: ["s.py"], heartbeat_file: "${state_dir}/orchestrator.heartbeat"}
+''', encoding="utf-8")
+    with pytest.raises(ValueError, match="orchestrator.heartbeat"):
+        load_registry(reg, project_root="C:/kutay")
+
+
+def test_distinct_heartbeat_files_in_one_project_ok(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\x\AppData\Local")
+    reg = tmp_path / "r.yaml"
+    reg.write_text('''
+projects:
+  kutai:
+    root: C:/kutay
+    targets:
+      - {id: orch, command: ["run.py"], heartbeat_file: "${state_dir}/orch.heartbeat"}
+      - {id: sidecar, command: ["s.py"], heartbeat_file: "${state_dir}/sidecar.heartbeat"}
+''', encoding="utf-8")
+    _, projects = load_registry(reg, project_root="C:/kutay")
+    hbs = {t.heartbeat_file for t in projects[0].targets}
+    assert len(hbs) == 2
+
+
+def test_targets_without_heartbeat_file_do_not_collide(tmp_path, monkeypatch):
+    """None heartbeat_file means 'no heartbeat' — two such targets must NOT be
+    read as a duplicate-path collision."""
+    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\x\AppData\Local")
+    reg = tmp_path / "r.yaml"
+    reg.write_text('''
+projects:
+  kutai:
+    root: C:/kutay
+    targets:
+      - {id: orch, command: ["run.py"]}
+      - {id: sidecar, command: ["s.py"]}
+''', encoding="utf-8")
+    _, projects = load_registry(reg, project_root="C:/kutay")
+    assert len(projects[0].targets) == 2
+
+
+def test_same_heartbeat_filename_across_projects_ok(tmp_path, monkeypatch):
+    """The gate is PER-PROJECT: distinct projects have distinct state_dirs, so an
+    identical heartbeat_file token resolves to different paths — not a collision."""
+    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\x\AppData\Local")
+    reg = tmp_path / "r.yaml"
+    reg.write_text('''
+projects:
+  kutai:
+    root: C:/kutay
+    targets:
+      - {id: orch, command: ["run.py"], heartbeat_file: "${state_dir}/orchestrator.heartbeat"}
+  bilinc:
+    root: C:/bilinc
+    targets:
+      - {id: orch, command: ["run.py"], heartbeat_file: "${state_dir}/orchestrator.heartbeat"}
+''', encoding="utf-8")
+    _, projects = load_registry(reg, project_root="C:/x")
+    assert len(projects) == 2

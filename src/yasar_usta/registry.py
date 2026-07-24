@@ -122,6 +122,21 @@ def load_registry(path, project_root: str) -> tuple[HubConfig, list[ProjectConfi
         if "targets" not in raw_proj or not raw_proj["targets"]:
             raise ValueError(f"project {pid!r} has no targets")
         targets = [_build_target(t, proj_tokens) for t in raw_proj["targets"]]
+        # R2 gate: targets in one project share proj.state_dir, so two identical
+        # heartbeat_file specs resolve to the same path — the writes clobber and
+        # the hung-detector reads the wrong target. Reject at load, not runtime.
+        seen_hb: dict[str, str] = {}
+        for t in targets:
+            if not t.heartbeat_file:
+                continue
+            key = os.path.normcase(os.path.normpath(t.heartbeat_file))
+            if key in seen_hb:
+                raise ValueError(
+                    f"project {pid!r}: targets {seen_hb[key]!r} and {t.name!r} both "
+                    f"use heartbeat_file={t.heartbeat_file!r} — each target in a "
+                    f"project must have a distinct heartbeat file"
+                )
+            seen_hb[key] = t.name
         raw_msgs = raw_proj.get("messages")
         msgs = None
         if raw_msgs:
