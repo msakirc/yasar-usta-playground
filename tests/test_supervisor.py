@@ -1,4 +1,5 @@
 import asyncio
+import os
 import pytest
 from yasar_usta.config import GuardConfig
 from yasar_usta.supervisor import TargetSupervisor
@@ -27,6 +28,32 @@ def test_request_stop_sets_flag_and_signal(tmp_path):
     sup.request_stop()
     assert sup._stop_requested is True
     assert (tmp_path / "logs" / "shutdown.signal").read_text() == "stop"
+
+
+def test_shutdown_signal_couples_to_state_dir_logs(tmp_path):
+    """COUPLING GUARD (R3 split-brain regression). The hub WRITES shutdown.signal
+    to cfg.log_dir (supervisor._write_shutdown_signal); kutai's
+    src/app/hb_paths.shutdown_signal_paths() READS the authoritative copy at
+    <state_dir>/logs/shutdown.signal. With registry.yaml flipping the orchestrator
+    log_dir to ${state_dir}/logs, the written path MUST resolve to
+    <state_dir>/logs/shutdown.signal or /shutdown_hub never reaches the
+    orchestrator. Locked in lockstep with kutay commit 0ee67bcd /
+    tests/yasar/test_shutdown_signal_path.py. NOTE the depth: <state_dir>/logs,
+    NOT <state_dir> root (the heartbeat lives at the root — different files)."""
+    state_dir = tmp_path / "YasarUsta" / "kutai"
+    log_dir = state_dir / "logs"
+    cfg = GuardConfig(name="orchestrator", app_name="Kutay", command=["python"],
+                      log_dir=str(log_dir), backoff_steps=[1])
+    async def notify(text, reply_markup=None):
+        pass
+    sup = TargetSupervisor("kutai", cfg, notify=notify)
+    sup.request_stop()
+    written = log_dir / "shutdown.signal"
+    assert written.read_text() == "stop"
+    assert os.path.basename(str(written)) == "shutdown.signal"
+    assert os.path.normpath(str(written.parent)) == os.path.normpath(str(log_dir))
+    # depth guard: signal is under state_dir/logs, not the state_dir root
+    assert os.path.normpath(str(written.parent)) != os.path.normpath(str(state_dir))
 
 
 def test_status_snapshot_shape(tmp_path):

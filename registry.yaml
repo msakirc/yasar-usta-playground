@@ -46,8 +46,8 @@ projects:
         heartbeat_stale_seconds: 120
         heartbeat_healthy_seconds: 90
         restart_exit_code: 42
-        log_dir: "${project_root}/logs"
-        log_file: "${project_root}/logs/orchestrator.jsonl"
+        log_dir: "${state_dir}/logs"                        # R3: hot state (shutdown.signal, guard.jsonl, sidecar logs) out of Dropbox
+        log_file: "${project_root}/logs/orchestrator.jsonl" # stays: read by yazbunu's --log-dir ./logs viewer (CWD-relative)
         stop_timeout: 30
         claude_name: Kutay
         claude_cmd: "${env:APPDATA}/npm/claude.cmd"
@@ -58,12 +58,12 @@ projects:
           - name: yazbunu
             command: ["${project_root}/.venv/Scripts/python.exe", "-m", "yazbunu.server", "--log-dir", "./logs", "--port", "9880", "--host", "0.0.0.0"]
             health_url: "http://127.0.0.1:9880/health"
-            pid_file: "${project_root}/logs/yazbunu.pid"
+            pid_file: "${state_dir}/logs/yazbunu.pid"       # R4: hub writes+reads this token end-to-end (sidecar.py:125/58); yazbunu writes no pid
             detached: true
           - name: nerd_herd
-            command: ["${project_root}/.venv/Scripts/python.exe", "-m", "nerd_herd", "--port", "9881", "--pid-file", "${project_root}/logs/nerd_herd.pid", "--db-path", "${project_root}/data/kutai.db"]
+            command: ["${project_root}/.venv/Scripts/python.exe", "-m", "nerd_herd", "--port", "9881", "--pid-file", "${state_dir}/logs/nerd_herd.pid", "--db-path", "${project_root}/data/kutai.db"]
             health_url: "http://127.0.0.1:9881/health"
-            pid_file: "${project_root}/logs/nerd_herd.pid"
+            pid_file: "${state_dir}/logs/nerd_herd.pid"     # R4: argv --pid-file (nerd_herd's own write) + hub read, moved in lockstep
             detached: true
 
   bilinc:
@@ -106,5 +106,40 @@ projects:
         auto_restart: true
         auto_start: false
         claude_name: Bilinç
+        claude_cmd: "${env:APPDATA}/npm/claude.cmd"
+        claude_signal_file: "${state_dir}/claude_remote.signal"
+
+  turs:
+    name: Turs
+    root: "C:/Users/sakir/Dropbox/Workspaces/turs"
+    messages:
+      announce: "🔧 *Bennn... Yaşar Usta!*\n\nTurs başlatılıyor..."
+      started: "✅ *Turs Started*"
+      stopped: "⏹ *Turs Stopped*\nSend /start to restart."
+      hung: "🔴 Turs dondu — Yaşar Usta {delay}sn içinde yeniden başlatıyor"
+      restarting: "♻️ *Turs yeniden başlatılıyor...*"
+      down_prompt: "⚠️ Turs durdu. Başlatmak için butona bas."
+      down_reply: "⏸ Turs şu an kapalı."
+      starting: "🚀 Turs başlatılıyor..."
+      btn_status: "🔧 Durum"
+      btn_logs: "📋 Loglar"
+      btn_remote: "🖥️ Claude Code"
+      remote_starting: "🖥️ Claude Code oturumu başlatılıyor..."
+      remote_not_found: "❌ `claude` bulunamadı. Claude Code kurulu mu?"
+    targets:
+      # STUB — turs has no app yet. auto_start/auto_restart false so the hub
+      # loads this entry (loader requires a target+command) but never launches
+      # it. Replace `command` with the real entrypoint when the build starts.
+      - id: app
+        app_name: Turs
+        command: ["${project_root}/.venv/Scripts/python.exe", "${project_root}/src/app/run.py"]
+        cwd: "${project_root}"
+        heartbeat_file: "${state_dir}/app.heartbeat"
+        heartbeat_stale_seconds: 120
+        heartbeat_healthy_seconds: 90
+        log_dir: "${project_root}/logs"
+        auto_start: false
+        auto_restart: false
+        claude_name: Turs
         claude_cmd: "${env:APPDATA}/npm/claude.cmd"
         claude_signal_file: "${state_dir}/claude_remote.signal"
