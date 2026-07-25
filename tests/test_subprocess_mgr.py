@@ -100,6 +100,63 @@ class TestSubprocessManager:
             )
             assert mgr.is_heartbeat_stale() is False
 
+    # ── Startup grace (slow-boot false-hung suppression) ─────────────────
+
+    def _mgr_with_hb(self, tmp, *, grace, stale=120):
+        return SubprocessManager(
+            command=["echo", "noop"], log_dir=tmp,
+            heartbeat_file=str(Path(tmp) / "heartbeat"),
+            heartbeat_stale_seconds=stale, startup_grace_seconds=grace,
+        )
+
+    def test_in_startup_grace_true_within_window(self):
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            mgr = self._mgr_with_hb(tmp, grace=180)
+            mgr.start_time = time.time()
+            assert mgr.in_startup_grace() is True
+
+    def test_in_startup_grace_false_after_window(self):
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            mgr = self._mgr_with_hb(tmp, grace=180)
+            mgr.start_time = time.time() - 200
+            assert mgr.in_startup_grace() is False
+
+    def test_in_startup_grace_false_when_disabled(self):
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            mgr = self._mgr_with_hb(tmp, grace=0)
+            mgr.start_time = time.time()
+            assert mgr.in_startup_grace() is False
+
+    def test_should_kill_as_hung_suppressed_within_grace(self):
+        """Stale heartbeat DURING the startup grace must NOT trigger a hung-kill —
+        this is the slow-boot false-hung the KutAI boot-loop exposed."""
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            mgr = self._mgr_with_hb(tmp, grace=180)
+            (Path(tmp) / "heartbeat").write_text(str(time.time() - 200))  # stale
+            mgr.start_time = time.time()  # but still booting
+            assert mgr.is_heartbeat_stale() is True
+            assert mgr.should_kill_as_hung() is False
+
+    def test_should_kill_as_hung_fires_after_grace(self):
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            mgr = self._mgr_with_hb(tmp, grace=180)
+            (Path(tmp) / "heartbeat").write_text(str(time.time() - 200))  # stale
+            mgr.start_time = time.time() - 300  # grace elapsed
+            assert mgr.should_kill_as_hung() is True
+
+    def test_should_kill_as_hung_false_when_fresh(self):
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            mgr = self._mgr_with_hb(tmp, grace=180)
+            (Path(tmp) / "heartbeat").write_text(str(time.time()))  # fresh
+            mgr.start_time = time.time() - 300  # past grace, but heartbeat healthy
+            assert mgr.should_kill_as_hung() is False
+
 
 import pytest
 

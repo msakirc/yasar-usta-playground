@@ -43,7 +43,8 @@ projects:
         env:
           NERD_HERD_PROJECT_ROOT: "${project_root}"
         heartbeat_file: "${state_dir}/orchestrator.heartbeat"
-        heartbeat_stale_seconds: 300   # was 120; cold-boot of the 4.4GB chroma + posthog init can exceed 120s → false "hung" crash-loop (2026-07-24)
+        heartbeat_stale_seconds: 120        # steady-state hang detection stays fast
+        startup_grace_seconds: 300          # but tolerate a slow cold boot (4.4GB chroma + posthog init blocks the app's own heartbeat) before arming hung-kill (2026-07-24)
         heartbeat_healthy_seconds: 90
         restart_exit_code: 42
         log_dir: "${state_dir}/logs"                        # R3: hot state (shutdown.signal, guard.jsonl, sidecar logs) out of Dropbox

@@ -71,6 +71,7 @@ def _build_target(raw: dict, tokens: dict) -> GuardConfig:
         heartbeat_file=raw.get("heartbeat_file"),
         heartbeat_stale_seconds=raw.get("heartbeat_stale_seconds", 120),
         heartbeat_healthy_seconds=raw.get("heartbeat_healthy_seconds", 90),
+        startup_grace_seconds=raw.get("startup_grace_seconds", 0),
         restart_exit_code=raw.get("restart_exit_code", 42),
         log_dir=raw.get("log_dir", "logs"),
         log_file=raw.get("log_file"),

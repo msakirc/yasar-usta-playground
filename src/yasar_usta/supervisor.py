@@ -62,6 +62,7 @@ class TargetSupervisor:
             command=config.command, log_dir=config.log_dir, cwd=config.cwd,
             stop_timeout=config.stop_timeout, heartbeat_file=config.heartbeat_file,
             heartbeat_stale_seconds=config.heartbeat_stale_seconds,
+            startup_grace_seconds=config.startup_grace_seconds,
             env=config.env,
             state_dir=state_dir,
         )

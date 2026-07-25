@@ -84,6 +84,7 @@ class SubprocessManager:
         heartbeat_stale_seconds: int = 120,
         env: dict | None = None,
         state_dir: str | None = None,
+        startup_grace_seconds: int = 0,
     ):
         self.command = command
         self.log_dir = Path(log_dir)
@@ -91,6 +92,7 @@ class SubprocessManager:
         self.stop_timeout = stop_timeout
         self.heartbeat_file = heartbeat_file
         self.heartbeat_stale_seconds = heartbeat_stale_seconds
+        self.startup_grace_seconds = startup_grace_seconds
         self.env = env or {}
         self.state_dir = state_dir
 
@@ -239,6 +241,15 @@ class SubprocessManager:
                 self.last_exit_code = code
                 return code
             except asyncio.TimeoutError:
+                if self.is_heartbeat_stale() and self.in_startup_grace():
+                    logger.info(
+                        "Heartbeat stale but within startup grace "
+                        "(%ss since start < %ds) — not killing yet",
+                        f"{(time.time() - self.start_time):.0f}"
+                        if self.start_time else "?",
+                        self.startup_grace_seconds,
+                    )
+                    continue
                 if self.is_heartbeat_stale():
                     age = self.heartbeat_age()
                     pid = getattr(self.process, "pid", "?")
@@ -282,6 +293,19 @@ class SubprocessManager:
             return (time.time() - last_beat) > self.heartbeat_stale_seconds
         except (FileNotFoundError, ValueError):
             return False
+
+    def in_startup_grace(self) -> bool:
+        """True while still inside the post-(re)start grace window, during which
+        a stale heartbeat is tolerated (the target may be in a heavy boot that
+        blocks its own heartbeat). Disabled when startup_grace_seconds is 0."""
+        if not self.startup_grace_seconds or not self.start_time:
+            return False
+        return (time.time() - self.start_time) < self.startup_grace_seconds
+
+    def should_kill_as_hung(self) -> bool:
+        """A target is hung (kill it) only when its heartbeat is stale AND it is
+        past the startup grace window."""
+        return self.is_heartbeat_stale() and not self.in_startup_grace()
 
     def is_heartbeat_healthy(self, healthy_seconds: int = 90) -> bool:
         """Check if heartbeat is fresh (within healthy_seconds)."""

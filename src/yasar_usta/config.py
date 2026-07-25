@@ -114,6 +114,10 @@ class GuardConfig:
     heartbeat_file: str | None = None
     heartbeat_stale_seconds: int = 120
     heartbeat_healthy_seconds: int = 90
+    # Grace window after (re)start during which a stale heartbeat does NOT
+    # trigger a hung-kill — lets a slow-booting target (heavy init that blocks
+    # its own heartbeat) finish coming up. 0 = disabled (kill as soon as stale).
+    startup_grace_seconds: int = 0
 
     # Exit codes
     restart_exit_code: int = 42
