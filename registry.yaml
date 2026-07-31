@@ -110,6 +110,31 @@ projects:
         claude_cmd: "${env:APPDATA}/npm/claude.cmd"
         claude_signal_file: "${state_dir}/claude_remote.signal"
 
+      - id: bilinc_sentinel
+        app_name: Bilinç Sentinel
+        command:
+          - "node"
+          - "${project_root}/web/scripts/sentinel/index.mjs"
+        cwd: "${project_root}/web"
+        env:
+          # least-privilege: NO AWS_PROFILE=bilinc-prod. Canary uses Cognito-unauth at runtime.
+          AWS_REGION: eu-central-1
+          PYTHONIOENCODING: utf-8
+          SENTINEL_LAUNCH_TABLE: bilinc-catalog-v2
+          # secrets (telegram token, supabase anon, sentry token, deadman url, smoke creds)
+          # come from the gitignored web/scripts/sentinel/.env.sentinel loaded by the shell,
+          # or are added here out-of-band — NEVER commit them.
+        log_dir: "${state_dir}/logs"
+        heartbeat_file: "${project_root}/web/scripts/sentinel/state/sentinel.heartbeat"
+        heartbeat_stale_seconds: 600
+        heartbeat_healthy_seconds: 300
+        stop_timeout: 60          # P1-8: a /stop mid-journey (≤180s) waits this long, then SIGKILL
+        auto_restart: true
+        auto_start: true
+        claude_name: Bilinç
+        claude_cmd: "${env:APPDATA}/npm/claude.cmd"
+        claude_signal_file: "${state_dir}/sentinel_claude_remote.signal"
+
   turs:
     name: Turs
     root: "C:/Users/sakir/Dropbox/Workspaces/turs"
