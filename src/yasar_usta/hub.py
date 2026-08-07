@@ -120,7 +120,13 @@ class Hub:
         # MUST be unique — fail loud at boot on a collision.
         self._launchers = [("🖥️ " + hub_cfg.name, "__hub__")]
         for proj in projects:
-            self._launchers.append(("🖥️ " + proj.name, proj.id))
+            # Route to a REAL supervisor routing id, mirroring the keying below:
+            # single-target → proj.id; multi-target → the first target's
+            # `${proj.id}:${tgt.name}`. A multi-target project has no supervisor
+            # keyed by the bare proj.id, so routing the launcher there would be a
+            # silent no-op (the dead-Bilinç-button bug after bilinc_sentinel).
+            rid = proj.id if len(proj.targets) == 1 else f"{proj.id}:{proj.targets[0].name}"
+            self._launchers.append(("🖥️ " + proj.name, rid))
         _labels = [lbl for lbl, _ in self._launchers]
         if len(set(_labels)) != len(_labels):
             raise SystemExit(
